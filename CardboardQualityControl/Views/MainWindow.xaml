@@ -1,0 +1,88 @@
+﻿<Window x:Class="CardboardQualityControl.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:CardboardQualityControl"
+        xmlns:converters="clr-namespace:CardboardQualityControl.Converters"
+        mc:Ignorable="d"
+        Title="Cardboard Quality Control" Height="800" Width="1200">
+    <Window.Resources>
+        <converters:DefectToBrushConverter x:Key="DefectToBrushConverter"/>
+
+        <Style TargetType="Button">
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Padding" Value="10,5"/>
+        </Style>
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <ToolBar Grid.Row="0">
+            <Button Content="Start Monitoring" Command="{Binding StartMonitoringCommand}"/>
+            <Button Content="Stop Monitoring" Command="{Binding StopMonitoringCommand}"/>
+            <Button Content="Capture Training Image" Command="{Binding CaptureTrainingImageCommand}"/>
+            <Separator/>
+            <Button Content="Open Training Dialog" Click="OpenTrainingDialog_Click"/>
+        </ToolBar>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Video Display -->
+            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="5">
+                <Image Source="{Binding CurrentFrame}" Stretch="Uniform"/>
+            </Border>
+
+            <!-- Status Panel -->
+            <StackPanel Grid.Column="1" Width="300" Margin="5">
+                <GroupBox Header="Status">
+                    <StackPanel>
+                        <TextBlock Text="{Binding StatusMessage}" FontWeight="Bold" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding TotalFramesProcessed, StringFormat='Frames Processed: {0}'}"/>
+                        <TextBlock Text="{Binding DefectCount, StringFormat='Defects Detected: {0}'}"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="Current Defect" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="{Binding CurrentDefect.DefectType, StringFormat='Type: {0}'}"/>
+                        <TextBlock Text="{Binding CurrentDefect.Confidence, StringFormat='Confidence: {0:P1}'}"/>
+                        <Border Height="20" Background="{Binding HasDefect, Converter={StaticResource DefectToBrushConverter}}"
+                                CornerRadius="3" Margin="0,5">
+                            <TextBlock Text="{Binding HasDefect, StringFormat='Has Defect: {0}'}" 
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="White" FontWeight="Bold"/>
+                        </Border>
+                    </StackPanel>
+                </GroupBox>
+            </StackPanel>
+        </Grid>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="2">
+            <StatusBarItem>
+                <TextBlock Text="{Binding IsMonitoring, StringFormat='Monitoring: {0}'}"/>
+            </StatusBarItem>
+            <Separator/>
+            <StatusBarItem>
+                <TextBlock Text="{Binding VideoSource, StringFormat='Video Source: {0}'}"/>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window>

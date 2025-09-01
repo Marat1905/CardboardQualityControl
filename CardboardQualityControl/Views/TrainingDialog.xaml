@@ -1,0 +1,42 @@
+﻿<Window x:Class="CardboardQualityControl.Views.TrainingDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Model Training" Height="600" Width="800" WindowStartupLocation="CenterOwner">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <ToolBar Grid.Row="0">
+            <Button Content="Load Training Images" Command="{Binding LoadTrainingImagesCommand}"/>
+            <Button Content="Start Training" Command="{Binding StartTrainingCommand}" 
+                    IsEnabled="{Binding IsTraining, Converter={StaticResource BooleanToNotConverter}}"/>
+            <Button Content="Start Retraining" Command="{Binding StartRetrainingCommand}" 
+                    IsEnabled="{Binding IsTraining, Converter={StaticResource BooleanToNotConverter}}"/>
+        </ToolBar>
+
+        <!-- Training Images List -->
+        <DataGrid Grid.Row="1" ItemsSource="{Binding TrainingImages}" AutoGenerateColumns="False" 
+                  IsReadOnly="True" Margin="5">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Image" Binding="{Binding ImagePath}" Width="*"/>
+                <DataGridTextColumn Header="Defect Type" Binding="{Binding DefectType}" Width="150"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Progress Bar -->
+        <ProgressBar Grid.Row="2" Height="20" Margin="5" 
+                     Value="{Binding TrainingProgress}" Maximum="100"
+                     Visibility="{Binding IsTraining, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+        <!-- Status -->
+        <TextBlock Grid.Row="3" Text="{Binding TrainingStatus}" Margin="5" FontWeight="Bold"/>
+    </Grid>
+</Window>
