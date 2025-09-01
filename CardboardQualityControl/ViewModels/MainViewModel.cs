@@ -1,33 +1,57 @@
-﻿using CardboardQualityControl.Converters;
-using CardboardQualityControl.ML;
+﻿using CardboardQualityControl.ML;
 using CardboardQualityControl.Models;
 using CardboardQualityControl.Services;
+using CardboardQualityControl.Converters;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
+using System.Windows.Media.Imaging;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
-using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.IO;
 
 namespace CardboardQualityControl.ViewModels
 {
     public class MainViewModel : INotifyPropertyChanged
     {
         private readonly ILogger<MainViewModel> _logger;
-        private readonly IVideoService _videoService;
+        private readonly VideoServiceFactory _videoServiceFactory;
         private readonly QualityModelService _modelService;
         private readonly AppConfig _config;
         private readonly Dispatcher _dispatcher;
+
+        private IVideoService _videoService;
         private BitmapSource? _currentFrame;
         private DefectInfo? _currentDefect;
         private bool _isMonitoring;
         private string _statusMessage = "Ready";
         private int _defectCount;
         private int _totalFramesProcessed;
+        private VideoSourceType _selectedVideoSource;
 
         public event PropertyChangedEventHandler? PropertyChanged;
+
+        public ObservableCollection<VideoSourceType> AvailableVideoSources { get; } = new()
+        {
+            VideoSourceType.Basler,
+            VideoSourceType.IpCamera,
+            VideoSourceType.FileVideo
+        };
+
+        public VideoSourceType SelectedVideoSource
+        {
+            get => _selectedVideoSource;
+            set
+            {
+                if (_selectedVideoSource != value)
+                {
+                    _selectedVideoSource = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
 
         public BitmapSource? CurrentFrame
         {
@@ -94,27 +118,36 @@ namespace CardboardQualityControl.ViewModels
             }
         }
 
+        public ICommand SwitchVideoSourceCommand { get; }
         public ICommand StartMonitoringCommand { get; }
         public ICommand StopMonitoringCommand { get; }
         public ICommand CaptureTrainingImageCommand { get; }
 
         public MainViewModel(ILogger<MainViewModel> logger,
-                     IVideoService videoService,
-                     QualityModelService modelService,
-                     AppConfig config,
-                     System.Windows.Threading.Dispatcher dispatcher)
+                           VideoServiceFactory videoServiceFactory,
+                           QualityModelService modelService,
+                           AppConfig config,
+                           Dispatcher dispatcher)
         {
             _logger = logger;
-            _videoService = videoService;
+            _videoServiceFactory = videoServiceFactory;
             _modelService = modelService;
             _config = config;
             _dispatcher = dispatcher;
 
+            SelectedVideoSource = _config.CurrentVideoSourceType;
+            _videoService = _videoServiceFactory.CreateVideoService(SelectedVideoSource);
+
             // Setup commands
+            SwitchVideoSourceCommand = new RelayCommand(async param =>
+                await SwitchVideoSourceAsync((VideoSourceType)param));
+
             StartMonitoringCommand = new RelayCommand(async _ => await StartMonitoringAsync(),
                 _ => !IsMonitoring);
+
             StopMonitoringCommand = new RelayCommand(async _ => await StopMonitoringAsync(),
                 _ => IsMonitoring);
+
             CaptureTrainingImageCommand = new RelayCommand(async _ => await CaptureTrainingImageAsync(),
                 _ => IsMonitoring && CurrentFrame != null);
 
@@ -127,27 +160,78 @@ namespace CardboardQualityControl.ViewModels
             {
                 StatusMessage = "Failed to load model";
             }
+            else
+            {
+                StatusMessage = "Model loaded successfully. Ready to start monitoring.";
+            }
+        }
+
+        private async Task SwitchVideoSourceAsync(VideoSourceType newSource)
+        {
+            try
+            {
+                if (IsMonitoring)
+                {
+                    await StopMonitoringAsync();
+                }
+
+                StatusMessage = $"Switching to {newSource}...";
+
+                // Отписываемся от событий текущего сервиса
+                if (_videoService != null)
+                {
+                    _videoService.FrameReady -= OnFrameReady;
+                    _videoService.Dispose();
+                }
+
+                // Создаем новый сервис
+                _videoService = _videoServiceFactory.CreateVideoService(newSource);
+                SelectedVideoSource = newSource;
+
+                // Подписываемся на события нового сервиса
+                _videoService.FrameReady += OnFrameReady;
+
+                // Очищаем текущий кадр
+                await _dispatcher.InvokeAsync(() =>
+                {
+                    CurrentFrame = null;
+                    CurrentDefect = null;
+                });
+
+                StatusMessage = $"Video source switched to: {newSource}";
+                _logger.LogInformation("Video source switched to: {Source}", newSource);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to switch video source to {Source}", newSource);
+                StatusMessage = $"Error switching to {newSource}: {ex.Message}";
+            }
         }
 
         private async void OnFrameReady(Mat frame)
         {
             try
             {
-                // Convert Mat to BitmapSource for display
-                await _dispatcher.InvokeAsync(() =>
+                using (frame)
                 {
-                    CurrentFrame = BitmapSourceConverter.ToBitmapSource(frame);
-                });
+                    // Convert Mat to BitmapSource for display
+                    var bitmapSource = BitmapSourceConverter.ToBitmapSource(frame);
 
-                // Process frame with model
-                var prediction = _modelService.Predict(frame);
-                TotalFramesProcessed++;
+                    await _dispatcher.InvokeAsync(() =>
+                    {
+                        CurrentFrame = bitmapSource;
+                    });
 
-                // Update defect count if defect detected
-                if (prediction.DefectType != DefectType.None &&
-                    prediction.Confidence >= _config.ModelSettings.ConfidenceThreshold)
-                {
-                    DefectCount++;
+                    // Process frame with model
+                    var prediction = _modelService.Predict(frame.Clone());
+                    TotalFramesProcessed++;
+
+                    // Update defect count if defect detected
+                    if (prediction.DefectType != DefectType.None &&
+                        prediction.Confidence >= _config.ModelSettings.ConfidenceThreshold)
+                    {
+                        DefectCount++;
+                    }
                 }
             }
             catch (Exception ex)
@@ -158,19 +242,30 @@ namespace CardboardQualityControl.ViewModels
 
         private void OnPredictionReady(ModelOutput prediction)
         {
-            CurrentDefect = new DefectInfo
+            try
             {
-                DefectType = prediction.DefectType,
-                Confidence = prediction.Confidence
-            };
+                _dispatcher.Invoke(() =>
+                {
+                    CurrentDefect = new DefectInfo
+                    {
+                        DefectType = prediction.DefectType,
+                        Confidence = prediction.Confidence,
+                        Location = new System.Drawing.Rectangle(0, 0, 0, 0) // Можно добавить реальные координаты
+                    };
 
-            if (HasDefect)
-            {
-                StatusMessage = $"Defect detected: {prediction.DefectType} ({(prediction.Confidence * 100):F1}%)";
+                    if (HasDefect)
+                    {
+                        StatusMessage = $"Defect detected: {prediction.DefectType} ({(prediction.Confidence * 100):F1}%)";
+                    }
+                    else
+                    {
+                        StatusMessage = "No defects detected";
+                    }
+                });
             }
-            else
+            catch (Exception ex)
             {
-                StatusMessage = "No defects detected";
+                _logger.LogError(ex, "Error updating prediction UI");
             }
         }
 
@@ -178,22 +273,23 @@ namespace CardboardQualityControl.ViewModels
         {
             try
             {
-                StatusMessage = "Connecting to video source...";
+                StatusMessage = $"Connecting to {SelectedVideoSource}...";
 
                 if (!await _videoService.ConnectAsync())
                 {
-                    StatusMessage = "Failed to connect to video source";
+                    StatusMessage = $"Failed to connect to {SelectedVideoSource}";
                     return;
                 }
 
                 await _videoService.StartCaptureAsync();
                 IsMonitoring = true;
-                StatusMessage = "Monitoring started";
+                StatusMessage = $"Monitoring started using {SelectedVideoSource}";
+                _logger.LogInformation("Monitoring started using {Source}", SelectedVideoSource);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to start monitoring");
-                StatusMessage = "Error starting monitoring";
+                _logger.LogError(ex, "Failed to start monitoring with {Source}", SelectedVideoSource);
+                StatusMessage = $"Error starting monitoring: {ex.Message}";
             }
         }
 
@@ -205,6 +301,7 @@ namespace CardboardQualityControl.ViewModels
                 await _videoService.DisconnectAsync();
                 IsMonitoring = false;
                 StatusMessage = "Monitoring stopped";
+                _logger.LogInformation("Monitoring stopped");
             }
             catch (Exception ex)
             {
@@ -228,7 +325,7 @@ namespace CardboardQualityControl.ViewModels
 
                 // Generate filename with timestamp
                 var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                var defectType = CurrentDefect?.DefectType.ToString() ?? "Unknown";
+                var defectType = CurrentDefect?.DefectType.ToString() ?? "None";
                 var filename = Path.Combine(trainingDir, $"{defectType}_{timestamp}.jpg");
 
                 // Save current frame
@@ -239,7 +336,8 @@ namespace CardboardQualityControl.ViewModels
                     encoder.Save(fileStream);
                 }
 
-                StatusMessage = $"Training image saved: {filename}";
+                StatusMessage = $"Training image saved: {Path.GetFileName(filename)}";
+                _logger.LogInformation("Training image saved: {Filename}", filename);
             }
             catch (Exception ex)
             {
@@ -248,9 +346,53 @@ namespace CardboardQualityControl.ViewModels
             }
         }
 
+        public async Task InitializeAsync()
+        {
+            try
+            {
+                StatusMessage = "Initializing application...";
+
+                // Предварительное подключение к видео источнику
+                if (await _videoService.ConnectAsync())
+                {
+                    StatusMessage = $"{SelectedVideoSource} connected. Ready to start monitoring.";
+                }
+                else
+                {
+                    StatusMessage = $"Failed to connect to {SelectedVideoSource}. Please check settings.";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to initialize application");
+                StatusMessage = "Initialization failed";
+            }
+        }
+
         protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                if (_videoService != null)
+                {
+                    _videoService.FrameReady -= OnFrameReady;
+                    _videoService.Dispose();
+                }
+
+                if (_modelService != null)
+                {
+                    _modelService.PredictionReady -= OnPredictionReady;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during disposal");
+            }
         }
     }
 }

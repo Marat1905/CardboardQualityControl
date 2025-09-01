@@ -15,6 +15,26 @@ namespace CardboardQualityControl.Services
             _config = config;
         }
 
+        public IVideoService CreateVideoService(VideoSourceType sourceType)
+        {
+            return sourceType switch
+            {
+                VideoSourceType.Basler => new BaslerVideoService(
+                    _serviceProvider.GetRequiredService<ILogger<BaslerVideoService>>(),
+                    _config.BaslerCameraSettings),
+
+                VideoSourceType.IpCamera => new IpVideoService(
+                    _serviceProvider.GetRequiredService<ILogger<IpVideoService>>(),
+                    _config.IpCameraSettings),
+
+                VideoSourceType.FileVideo => new FileVideoService(
+                    _serviceProvider.GetRequiredService<ILogger<FileVideoService>>(),
+                    _config.FileVideoSettings),
+
+                _ => throw new NotSupportedException($"Video source '{sourceType}' is not supported")
+            };
+        }
+
         public IVideoService CreateVideoService()
         {
             return _config.VideoSource.ToLower() switch

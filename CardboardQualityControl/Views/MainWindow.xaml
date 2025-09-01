@@ -4,21 +4,51 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:CardboardQualityControl"
+        xmlns:models="clr-namespace:CardboardQualityControl.Models"
         xmlns:converters="clr-namespace:CardboardQualityControl.Converters"
         mc:Ignorable="d"
-        Title="Cardboard Quality Control" Height="800" Width="1200">
+        Title="Cardboard Quality Control System" 
+        Height="900" 
+        Width="1400"
+        WindowStartupLocation="CenterScreen"
+        Closing="Window_Closing">
+
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <converters:DefectToBrushConverter x:Key="DefectToBrushConverter"/>
+        <converters:VideoSourceTypeToStringConverter x:Key="VideoSourceTypeConverter"/>
+        <converters:DefectTypeToStringConverter x:Key="DefectTypeConverter"/>
+        <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+        <converters:BooleanToColorConverter x:Key="BooleanToColorConverter"/>
+        <converters:DefectToStatusColorConverter x:Key="DefectToStatusColorConverter"/>
+        <converters:BooleanToNotConverter x:Key="BooleanToNotConverter"/>
+        <converters:BooleanToStringConverter x:Key="BooleanToStringConverter"/>
 
         <Style TargetType="Button">
-            <Setter Property="Margin" Value="5"/>
-            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="MinWidth" Value="80"/>
         </Style>
 
         <Style TargetType="TextBlock">
-            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Margin" Value="4"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
+
+        <Style TargetType="GroupBox">
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Padding" Value="5"/>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="MinWidth" Value="120"/>
+        </Style>
+
+        <!-- DataTemplate для ComboBox -->
+        <DataTemplate x:Key="VideoSourceTypeTemplate">
+            <TextBlock Text="{Binding Converter={StaticResource VideoSourceTypeConverter}}"/>
+        </DataTemplate>
     </Window.Resources>
 
     <Grid>
@@ -28,60 +58,206 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar -->
-        <ToolBar Grid.Row="0">
-            <Button Content="Start Monitoring" Command="{Binding StartMonitoringCommand}"/>
-            <Button Content="Stop Monitoring" Command="{Binding StopMonitoringCommand}"/>
-            <Button Content="Capture Training Image" Command="{Binding CaptureTrainingImageCommand}"/>
-            <Separator/>
-            <Button Content="Open Training Dialog" Click="OpenTrainingDialog_Click"/>
-        </ToolBar>
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#FF1976D2" Padding="10">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="📦 " FontSize="20" VerticalAlignment="Center"/>
+                <TextBlock Text="Cardboard Quality Control System" 
+                         FontSize="18" 
+                         FontWeight="Bold" 
+                         Foreground="White"
+                         VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
 
         <!-- Main Content -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="300"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Video Display -->
-            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="5">
-                <Image Source="{Binding CurrentFrame}" Stretch="Uniform"/>
+            <!-- Video Display Area -->
+            <Border Grid.Column="0" 
+                    BorderBrush="#FFCCCCCC" 
+                    BorderThickness="1" 
+                    Margin="10"
+                    Background="#FF2D2D30">
+                <Grid>
+                    <Image Source="{Binding CurrentFrame}" 
+                           Stretch="Uniform"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+
+                    <!-- Overlay when no video -->
+                    <Border Background="#80000000" 
+                            Visibility="{Binding CurrentFrame, Converter={StaticResource NullToVisibilityConverter}}"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch">
+                        <TextBlock Text="No video signal" 
+                                   Foreground="White"
+                                   FontSize="16"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                </Grid>
             </Border>
 
-            <!-- Status Panel -->
-            <StackPanel Grid.Column="1" Width="300" Margin="5">
-                <GroupBox Header="Status">
+            <!-- Control Panel -->
+            <StackPanel Grid.Column="1" Margin="0,10,10,10">
+                <!-- Video Source Selection -->
+                <GroupBox Header="Video Source">
                     <StackPanel>
-                        <TextBlock Text="{Binding StatusMessage}" FontWeight="Bold" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding TotalFramesProcessed, StringFormat='Frames Processed: {0}'}"/>
-                        <TextBlock Text="{Binding DefectCount, StringFormat='Defects Detected: {0}'}"/>
+                        <ComboBox ItemsSource="{Binding AvailableVideoSources}" 
+                                  SelectedItem="{Binding SelectedVideoSource}"
+                                  ItemTemplate="{StaticResource VideoSourceTypeTemplate}"/>
+
+                        <Button Content="Switch Source" 
+                                Command="{Binding SwitchVideoSourceCommand}"
+                                CommandParameter="{Binding SelectedVideoSource}"
+                                Margin="0,8,0,0"
+                                Background="#FF2196F3"
+                                Foreground="White"/>
                     </StackPanel>
                 </GroupBox>
 
-                <GroupBox Header="Current Defect" Margin="0,10,0,0">
+                <!-- Monitoring Controls -->
+                <GroupBox Header="Monitoring" Margin="0,10,0,0">
                     <StackPanel>
-                        <TextBlock Text="{Binding CurrentDefect.DefectType, StringFormat='Type: {0}'}"/>
-                        <TextBlock Text="{Binding CurrentDefect.Confidence, StringFormat='Confidence: {0:P1}'}"/>
-                        <Border Height="20" Background="{Binding HasDefect, Converter={StaticResource DefectToBrushConverter}}"
-                                CornerRadius="3" Margin="0,5">
-                            <TextBlock Text="{Binding HasDefect, StringFormat='Has Defect: {0}'}" 
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Foreground="White" FontWeight="Bold"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button Content="Start" 
+                                    Command="{Binding StartMonitoringCommand}"
+                                    Background="#FF4CAF50"
+                                    Foreground="White"
+                                    IsEnabled="{Binding IsMonitoring, Converter={StaticResource BooleanToNotConverter}}"/>
+
+                            <Button Content="Stop" 
+                                    Command="{Binding StopMonitoringCommand}"
+                                    Background="#FFF44336"
+                                    Foreground="White"
+                                    IsEnabled="{Binding IsMonitoring}"/>
+                        </StackPanel>
+
+                        <Button Content="Capture Training Image" 
+                                Command="{Binding CaptureTrainingImageCommand}"
+                                Margin="0,8,0,0"
+                                Background="#FFFF9800"
+                                Foreground="White"
+                                IsEnabled="{Binding IsMonitoring}"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- Status Information -->
+                <GroupBox Header="Status" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="{Binding StatusMessage}" 
+                                   FontWeight="Bold"
+                                   TextWrapping="Wrap"
+                                   Foreground="{Binding HasDefect, Converter={StaticResource DefectToStatusColorConverter}}"/>
+
+                        <ProgressBar Height="4" 
+                                     Margin="0,4,0,0"
+                                     IsIndeterminate="{Binding IsMonitoring}"
+                                     Visibility="{Binding IsMonitoring, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="Monitoring:"/>
+                            <TextBlock Text="{Binding IsMonitoring}" 
+                                       Foreground="{Binding IsMonitoring, Converter={StaticResource BooleanToColorConverter}}"
+                                       Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- Defect Information -->
+                <GroupBox Header="Defect Detection" Margin="0,10,0,0">
+                    <StackPanel>
+                        <Border Background="{Binding HasDefect, Converter={StaticResource DefectToBrushConverter}}"
+                                CornerRadius="4"
+                                Padding="8"
+                                Margin="0,0,0,8">
+                            <TextBlock Text="{Binding HasDefect, Converter={StaticResource BooleanToStringConverter}}" 
+                                       HorizontalAlignment="Center"
+                                       FontWeight="Bold"
+                                       Foreground="White"/>
                         </Border>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Type:"/>
+                            <TextBlock Text="{Binding CurrentDefect.DefectType, Converter={StaticResource DefectTypeConverter}}"
+                                       Margin="8,0,0,0"
+                                       FontWeight="Bold"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <TextBlock Text="Confidence:"/>
+                            <TextBlock Text="{Binding CurrentDefect.Confidence, StringFormat='{}{0:P1}'}"
+                                       Margin="8,0,0,0"
+                                       FontWeight="Bold"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="Total Defects:"/>
+                            <TextBlock Text="{Binding DefectCount}"
+                                       Margin="8,0,0,0"
+                                       FontWeight="Bold"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <TextBlock Text="Frames Processed:"/>
+                            <TextBlock Text="{Binding TotalFramesProcessed}"
+                                       Margin="8,0,0,0"
+                                       FontWeight="Bold"/>
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- Quick Actions -->
+                <GroupBox Header="Quick Actions" Margin="0,10,0,0">
+                    <StackPanel>
+                        <Button Content="Open Training Dialog" 
+                                Click="OpenTrainingDialog_Click"
+                                Background="#FF9C27B0"
+                                Foreground="White"/>
+
+                        <Button Content="Reset Counters" 
+                                Click="ResetCounters_Click"
+                                Margin="0,8,0,0"
+                                Background="#FF607D8B"
+                                Foreground="White"/>
                     </StackPanel>
                 </GroupBox>
             </StackPanel>
         </Grid>
 
         <!-- Status Bar -->
-        <StatusBar Grid.Row="2">
+        <StatusBar Grid.Row="2" Background="#FFE0E0E0">
+            <StatusBarItem>
+                <TextBlock Text="{Binding SelectedVideoSource, Converter={StaticResource VideoSourceTypeConverter}}"/>
+            </StatusBarItem>
+
+            <Separator/>
+
             <StatusBarItem>
                 <TextBlock Text="{Binding IsMonitoring, StringFormat='Monitoring: {0}'}"/>
             </StatusBarItem>
+
             <Separator/>
+
             <StatusBarItem>
-                <TextBlock Text="{Binding VideoSource, StringFormat='Video Source: {0}'}"/>
+                <TextBlock Text="{Binding DefectCount, StringFormat='Defects: {0}'}"/>
+            </StatusBarItem>
+
+            <Separator/>
+
+            <StatusBarItem>
+                <TextBlock Text="{Binding TotalFramesProcessed, StringFormat='Frames: {0}'}"/>
+            </StatusBarItem>
+
+            <Separator/>
+
+            <StatusBarItem>
+                <TextBlock Text="{Binding CurrentDefect.DefectType, Converter={StaticResource DefectTypeConverter}}"/>
             </StatusBarItem>
         </StatusBar>
     </Grid>

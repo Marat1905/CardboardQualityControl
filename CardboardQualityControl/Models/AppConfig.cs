@@ -7,6 +7,21 @@ namespace CardboardQualityControl.Models
         [JsonPropertyName("videoSource")]
         public string VideoSource { get; set; } = "Basler";
 
+        // Добавьте свойство для текущего типа источника
+        public VideoSourceType CurrentVideoSourceType
+        {
+            get
+            {
+                return VideoSource.ToLower() switch
+                {
+                    "basler" => VideoSourceType.Basler,
+                    "ip" => VideoSourceType.IpCamera,
+                    "file" => VideoSourceType.FileVideo,
+                    _ => VideoSourceType.Basler
+                };
+            }
+        }
+
         [JsonPropertyName("baslerCameraSettings")]
         public BaslerCameraSettings BaslerCameraSettings { get; set; } = new();
 

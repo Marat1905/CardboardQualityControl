@@ -3,16 +3,18 @@ using System.Windows.Data;
 
 namespace CardboardQualityControl.Converters
 {
-    public class BooleanToNotConverter : IValueConverter
+    public class BooleanToStringConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            return value is bool b ? !b : value;
+            return value is bool boolValue ?
+                (boolValue ? "DEFECT DETECTED" : "No defects") :
+                "Unknown";
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            return value is bool b ? !b : value;
+            throw new NotImplementedException();
         }
     }
 }
