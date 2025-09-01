@@ -1,49 +1,32 @@
 ﻿using CardboardQualityControl.Models;
+using CardboardQualityControl.Services;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
-namespace CardboardQualityControl.Services
+public class VideoServiceFactory
 {
-    public class VideoServiceFactory
+    private readonly IServiceProvider _serviceProvider;
+    private readonly AppConfig _config;
+
+    public VideoServiceFactory(IServiceProvider serviceProvider, AppConfig config)
     {
-        private readonly IServiceProvider _serviceProvider;
-        private readonly AppConfig _config;
+        _serviceProvider = serviceProvider;
+        _config = config;
+    }
 
-        public VideoServiceFactory(IServiceProvider serviceProvider, AppConfig config)
+    public IVideoService CreateVideoService(VideoSourceType sourceType)
+    {
+        return sourceType switch
         {
-            _serviceProvider = serviceProvider;
-            _config = config;
-        }
+            VideoSourceType.Basler => _serviceProvider.GetRequiredService<BaslerVideoService>(),
+            VideoSourceType.IpCamera => _serviceProvider.GetRequiredService<IpVideoService>(),
+            VideoSourceType.FileVideo => _serviceProvider.GetRequiredService<FileVideoService>(),
+            _ => throw new NotSupportedException($"Video source '{sourceType}' is not supported")
+        };
+    }
 
-        public IVideoService CreateVideoService(VideoSourceType sourceType)
-        {
-            return sourceType switch
-            {
-                VideoSourceType.Basler => new BaslerVideoService(
-                    _serviceProvider.GetRequiredService<ILogger<BaslerVideoService>>(),
-                    _config.BaslerCameraSettings),
-
-                VideoSourceType.IpCamera => new IpVideoService(
-                    _serviceProvider.GetRequiredService<ILogger<IpVideoService>>(),
-                    _config.IpCameraSettings),
-
-                VideoSourceType.FileVideo => new FileVideoService(
-                    _serviceProvider.GetRequiredService<ILogger<FileVideoService>>(),
-                    _config.FileVideoSettings),
-
-                _ => throw new NotSupportedException($"Video source '{sourceType}' is not supported")
-            };
-        }
-
-        public IVideoService CreateVideoService()
-        {
-            return _config.VideoSource.ToLower() switch
-            {
-                "basler" => _serviceProvider.GetRequiredService<BaslerVideoService>(),
-                "ip" => _serviceProvider.GetRequiredService<IpVideoService>(),
-                "file" => _serviceProvider.GetRequiredService<FileVideoService>(),
-                _ => throw new NotSupportedException($"Video source '{_config.VideoSource}' is not supported")
-            };
-        }
+    // Добавьте метод без параметров для обратной совместимости
+    public IVideoService CreateVideoService()
+    {
+        return CreateVideoService(_config.CurrentVideoSourceType);
     }
 }

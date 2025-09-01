@@ -10,8 +10,7 @@
         Title="Cardboard Quality Control System" 
         Height="900" 
         Width="1400"
-        WindowStartupLocation="CenterScreen"
-        Closing="Window_Closing">
+        WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
@@ -23,6 +22,7 @@
         <converters:DefectToStatusColorConverter x:Key="DefectToStatusColorConverter"/>
         <converters:BooleanToNotConverter x:Key="BooleanToNotConverter"/>
         <converters:BooleanToStringConverter x:Key="BooleanToStringConverter"/>
+        <converters:FileVideoVisibilityConverter x:Key="FileVideoVisibilityConverter"/>
 
         <Style TargetType="Button">
             <Setter Property="Margin" Value="4"/>
@@ -118,6 +118,24 @@
                                 Margin="0,8,0,0"
                                 Background="#FF2196F3"
                                 Foreground="White"/>
+
+                        <!-- Кнопка выбора файла -->
+                        <Button Content="Select Video File" 
+                                Command="{Binding SelectVideoFileCommand}"
+                                Margin="0,8,0,0"
+                                Background="#FF9C27B0"
+                                Foreground="White"
+                                Visibility="{Binding IsFileVideoSelected, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+                        <!-- Отображение пути к файлу -->
+                        <TextBlock Text="{Binding CurrentVideoPath}" 
+                                   Margin="0,8,0,0"
+                                   TextWrapping="Wrap"
+                                   FontStyle="Italic"
+                                   FontSize="10"
+                                   MaxHeight="40"
+                                   TextTrimming="CharacterEllipsis"
+                                   Visibility="{Binding IsFileVideoSelected, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </StackPanel>
                 </GroupBox>
 
@@ -216,12 +234,12 @@
                 <GroupBox Header="Quick Actions" Margin="0,10,0,0">
                     <StackPanel>
                         <Button Content="Open Training Dialog" 
-                                Click="OpenTrainingDialog_Click"
+                                Command="{Binding OpenTrainingDialogCommand}"
                                 Background="#FF9C27B0"
                                 Foreground="White"/>
 
                         <Button Content="Reset Counters" 
-                                Click="ResetCounters_Click"
+                                Command="{Binding ResetCountersCommand}"
                                 Margin="0,8,0,0"
                                 Background="#FF607D8B"
                                 Foreground="White"/>

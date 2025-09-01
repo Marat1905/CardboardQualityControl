@@ -125,5 +125,10 @@ namespace CardboardQualityControl.Services
             _capture?.Dispose();
             _cancellationTokenSource?.Dispose();
         }
+
+        public Task<bool> ConnectAsync(string? filePath = null)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

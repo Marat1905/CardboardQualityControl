@@ -14,5 +14,6 @@
         <converters:DefectToStatusColorConverter x:Key="DefectToStatusColorConverter"/>
         <converters:BooleanToNotConverter x:Key="BooleanToNotConverter"/>
         <converters:BooleanToStringConverter x:Key="BooleanToStringConverter"/>
+        <converters:FileVideoVisibilityConverter x:Key="FileVideoVisibilityConverter"/>
     </Application.Resources>
 </Application>

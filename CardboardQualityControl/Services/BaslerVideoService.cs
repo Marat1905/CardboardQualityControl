@@ -138,5 +138,10 @@ namespace CardboardQualityControl.Services
             DisconnectAsync().Wait();
             _camera?.Dispose();
         }
+
+        public Task<bool> ConnectAsync(string? filePath = null)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

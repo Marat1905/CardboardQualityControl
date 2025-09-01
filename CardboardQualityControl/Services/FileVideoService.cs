@@ -1,4 +1,5 @@
-﻿using OpenCvSharp;
+﻿using Microsoft.Win32; // Добавьте этот using
+using OpenCvSharp;
 using Microsoft.Extensions.Logging;
 using CardboardQualityControl.Models;
 using System.IO;
@@ -12,36 +13,61 @@ namespace CardboardQualityControl.Services
         private VideoCapture? _capture;
         private bool _isCapturing;
         private CancellationTokenSource? _cancellationTokenSource;
+        private string _currentVideoPath;
 
         public event Action<Mat>? FrameReady;
         public bool IsConnected => _capture?.IsOpened() == true;
+
+        public string CurrentVideoPath
+        {
+            get => _currentVideoPath;
+            private set => _currentVideoPath = value;
+        }
 
         public FileVideoService(ILogger<FileVideoService> logger, FileVideoSettings settings)
         {
             _logger = logger;
             _settings = settings;
+            _currentVideoPath = settings.Path;
         }
 
         public async Task<bool> ConnectAsync()
         {
+            return await ConnectAsync(null);
+        }
+
+        public async Task<bool> ConnectAsync(string? filePath = null)
+        {
             try
             {
-                _logger.LogInformation("Opening video file...");
-
-                if (!File.Exists(_settings.Path))
+                // Если путь не указан, открываем диалог выбора файла
+                if (string.IsNullOrEmpty(filePath))
                 {
-                    _logger.LogError("Video file does not exist: {Path}", _settings.Path);
+                    filePath = ShowOpenFileDialog(); // Измените название метода
+                    if (string.IsNullOrEmpty(filePath))
+                    {
+                        _logger.LogWarning("No video file selected");
+                        return false;
+                    }
+                }
+
+                _logger.LogInformation("Opening video file: {FilePath}", filePath);
+
+                if (!File.Exists(filePath))
+                {
+                    _logger.LogError("Video file does not exist: {FilePath}", filePath);
                     return false;
                 }
 
-                _capture = new VideoCapture(_settings.Path);
+                _capture = new VideoCapture(filePath);
                 if (!_capture.IsOpened())
                 {
-                    _logger.LogError("Failed to open video file");
+                    _logger.LogError("Failed to open video file: {FilePath}", filePath);
                     return false;
                 }
 
-                _logger.LogInformation("Video file opened successfully");
+                CurrentVideoPath = filePath;
+                _logger.LogInformation("Video file opened successfully: {FilePath}", filePath);
                 return true;
             }
             catch (Exception ex)
@@ -49,6 +75,24 @@ namespace CardboardQualityControl.Services
                 _logger.LogError(ex, "Failed to open video file");
                 return false;
             }
+        }
+
+        private string? ShowOpenFileDialog() // Измените название метода
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "Video Files|*.mp4;*.avi;*.mov;*.wmv;*.mkv;*.flv;*.webm|All Files|*.*",
+                Title = "Select Video File",
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+                Multiselect = false
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                return openFileDialog.FileName;
+            }
+
+            return null;
         }
 
         public async Task DisconnectAsync()
@@ -75,10 +119,9 @@ namespace CardboardQualityControl.Services
                 _cancellationTokenSource = new CancellationTokenSource();
                 _isCapturing = true;
 
-                // Start frame capture loop
                 _ = Task.Run(() => CaptureFrames(_cancellationTokenSource.Token));
 
-                _logger.LogInformation("Started playing video file");
+                _logger.LogInformation("Started playing video file: {FilePath}", CurrentVideoPath);
             }
             catch (Exception ex)
             {
@@ -94,9 +137,6 @@ namespace CardboardQualityControl.Services
             {
                 _cancellationTokenSource?.Cancel();
                 _isCapturing = false;
-
-                // Reset to beginning of video
-                _capture?.Set(VideoCaptureProperties.PosFrames, 0);
 
                 _logger.LogInformation("Stopped playing video file");
             }
@@ -120,7 +160,7 @@ namespace CardboardQualityControl.Services
                         }
                         else
                         {
-                            // End of video, restart from beginning
+                            // End of video, restart from beginning if loop is enabled
                             _capture.Set(VideoCaptureProperties.PosFrames, 0);
                         }
                     }

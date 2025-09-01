@@ -6,7 +6,9 @@ namespace CardboardQualityControl.Services
     {
         event Action<Mat> FrameReady;
         bool IsConnected { get; }
-        Task<bool> ConnectAsync();
+
+        Task<bool> ConnectAsync(); // Без параметров
+        Task<bool> ConnectAsync(string? filePath = null); // С опциональным параметром
         Task DisconnectAsync();
         Task StartCaptureAsync();
         Task StopCaptureAsync();

@@ -10,6 +10,9 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Microsoft.Extensions.DependencyInjection;
+using System.Windows;
+using CardboardQualityControl.Views;
 using System.IO;
 
 namespace CardboardQualityControl.ViewModels
@@ -21,6 +24,7 @@ namespace CardboardQualityControl.ViewModels
         private readonly QualityModelService _modelService;
         private readonly AppConfig _config;
         private readonly Dispatcher _dispatcher;
+        private readonly IServiceProvider _serviceProvider;
 
         private IVideoService _videoService;
         private BitmapSource? _currentFrame;
@@ -30,6 +34,7 @@ namespace CardboardQualityControl.ViewModels
         private int _defectCount;
         private int _totalFramesProcessed;
         private VideoSourceType _selectedVideoSource;
+        private string _currentVideoPath = string.Empty;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -49,7 +54,20 @@ namespace CardboardQualityControl.ViewModels
                 {
                     _selectedVideoSource = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(IsFileVideoSelected));
                 }
+            }
+        }
+
+        public bool IsFileVideoSelected => SelectedVideoSource == VideoSourceType.FileVideo;
+
+        public string CurrentVideoPath
+        {
+            get => _currentVideoPath;
+            set
+            {
+                _currentVideoPath = value;
+                OnPropertyChanged();
             }
         }
 
@@ -122,18 +140,23 @@ namespace CardboardQualityControl.ViewModels
         public ICommand StartMonitoringCommand { get; }
         public ICommand StopMonitoringCommand { get; }
         public ICommand CaptureTrainingImageCommand { get; }
+        public ICommand SelectVideoFileCommand { get; }
+        public ICommand OpenTrainingDialogCommand { get; }
+        public ICommand ResetCountersCommand { get; }
 
         public MainViewModel(ILogger<MainViewModel> logger,
                            VideoServiceFactory videoServiceFactory,
                            QualityModelService modelService,
                            AppConfig config,
-                           Dispatcher dispatcher)
+                           Dispatcher dispatcher,
+                           IServiceProvider serviceProvider)
         {
             _logger = logger;
             _videoServiceFactory = videoServiceFactory;
             _modelService = modelService;
             _config = config;
             _dispatcher = dispatcher;
+            _serviceProvider = serviceProvider;
 
             SelectedVideoSource = _config.CurrentVideoSourceType;
             _videoService = _videoServiceFactory.CreateVideoService(SelectedVideoSource);
@@ -151,6 +174,12 @@ namespace CardboardQualityControl.ViewModels
             CaptureTrainingImageCommand = new RelayCommand(async _ => await CaptureTrainingImageAsync(),
                 _ => IsMonitoring && CurrentFrame != null);
 
+            SelectVideoFileCommand = new RelayCommand(async _ => await SelectVideoFileAsync(),
+                _ => SelectedVideoSource == VideoSourceType.FileVideo);
+
+            OpenTrainingDialogCommand = new RelayCommand(_ => OpenTrainingDialog());
+            ResetCountersCommand = new RelayCommand(_ => ResetCounters());
+
             // Subscribe to events
             _videoService.FrameReady += OnFrameReady;
             _modelService.PredictionReady += OnPredictionReady;
@@ -163,6 +192,44 @@ namespace CardboardQualityControl.ViewModels
             else
             {
                 StatusMessage = "Model loaded successfully. Ready to start monitoring.";
+            }
+        }
+
+        private async Task SelectVideoFileAsync()
+        {
+            try
+            {
+                if (IsMonitoring)
+                {
+                    await StopMonitoringAsync();
+                }
+
+                // Получаем сервис файлового видео
+                var fileVideoService = _serviceProvider.GetService<FileVideoService>();
+                if (fileVideoService == null)
+                {
+                    StatusMessage = "File video service not available";
+                    return;
+                }
+
+                // Открываем диалог выбора файла - ВЫЗЫВАЕМ БЕЗ ПАРАМЕТРОВ
+                bool connected = await fileVideoService.ConnectAsync();
+
+                if (connected)
+                {
+                    // Используем свойство CurrentVideoPath из FileVideoService
+                    CurrentVideoPath = fileVideoService.CurrentVideoPath;
+                    StatusMessage = $"Selected video: {Path.GetFileName(CurrentVideoPath)}";
+
+                    // Обновляем сервис
+                    _videoService = fileVideoService;
+                    _videoService.FrameReady += OnFrameReady;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to select video file");
+                StatusMessage = "Error selecting video file";
             }
         }
 
@@ -187,6 +254,12 @@ namespace CardboardQualityControl.ViewModels
                 // Создаем новый сервис
                 _videoService = _videoServiceFactory.CreateVideoService(newSource);
                 SelectedVideoSource = newSource;
+
+                // Сбрасываем путь к файлу если это не файловый источник
+                if (newSource != VideoSourceType.FileVideo)
+                {
+                    CurrentVideoPath = string.Empty;
+                }
 
                 // Подписываемся на события нового сервиса
                 _videoService.FrameReady += OnFrameReady;
@@ -250,7 +323,7 @@ namespace CardboardQualityControl.ViewModels
                     {
                         DefectType = prediction.DefectType,
                         Confidence = prediction.Confidence,
-                        Location = new System.Drawing.Rectangle(0, 0, 0, 0) // Можно добавить реальные координаты
+                        Location = new System.Drawing.Rectangle(0, 0, 0, 0)
                     };
 
                     if (HasDefect)
@@ -275,6 +348,19 @@ namespace CardboardQualityControl.ViewModels
             {
                 StatusMessage = $"Connecting to {SelectedVideoSource}...";
 
+                if (SelectedVideoSource == VideoSourceType.FileVideo &&
+                    _videoService is FileVideoService fileVideoService &&
+                    string.IsNullOrEmpty(CurrentVideoPath))
+                {
+                    // Если файл не выбран, открываем диалог
+                    await SelectVideoFileAsync();
+                    if (string.IsNullOrEmpty(CurrentVideoPath))
+                    {
+                        return; // Пользователь отменил выбор файла
+                    }
+                }
+
+                // УБРАТЬ ПАРАМЕТРЫ из вызова ConnectAsync
                 if (!await _videoService.ConnectAsync())
                 {
                     StatusMessage = $"Failed to connect to {SelectedVideoSource}";
@@ -323,10 +409,16 @@ namespace CardboardQualityControl.ViewModels
                     Directory.CreateDirectory(trainingDir);
                 }
 
+                // Create subdirectory for defect type
+                var defectTypeDir = Path.Combine(trainingDir, CurrentDefect?.DefectType.ToString() ?? "None");
+                if (!Directory.Exists(defectTypeDir))
+                {
+                    Directory.CreateDirectory(defectTypeDir);
+                }
+
                 // Generate filename with timestamp
                 var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                var defectType = CurrentDefect?.DefectType.ToString() ?? "None";
-                var filename = Path.Combine(trainingDir, $"{defectType}_{timestamp}.jpg");
+                var filename = Path.Combine(defectTypeDir, $"{timestamp}.jpg");
 
                 // Save current frame
                 using (var fileStream = new FileStream(filename, FileMode.Create))
@@ -346,20 +438,59 @@ namespace CardboardQualityControl.ViewModels
             }
         }
 
+        private void OpenTrainingDialog()
+        {
+            try
+            {
+                _dispatcher.Invoke(() =>
+                {
+                    var trainingDialog = _serviceProvider.GetService<TrainingDialog>();
+                    if (trainingDialog != null)
+                    {
+                        // Получаем главное окно через Dispatcher
+                        var mainWindow = System.Windows.Application.Current.MainWindow;
+                        trainingDialog.Owner = mainWindow;
+                        trainingDialog.ShowDialog();
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to open training dialog");
+                StatusMessage = "Error opening training dialog";
+            }
+        }
+
+        private void ResetCounters()
+        {
+            DefectCount = 0;
+            TotalFramesProcessed = 0;
+            StatusMessage = "Counters reset";
+            _logger.LogInformation("Counters reset");
+        }
+
         public async Task InitializeAsync()
         {
             try
             {
                 StatusMessage = "Initializing application...";
 
-                // Предварительное подключение к видео источнику
-                if (await _videoService.ConnectAsync())
+                // Предварительное подключение к видео источнику (кроме файлового)
+                if (SelectedVideoSource != VideoSourceType.FileVideo)
                 {
-                    StatusMessage = $"{SelectedVideoSource} connected. Ready to start monitoring.";
+                    // ИСПРАВЛЕНО: добавлен параметр null
+                    if (await _videoService.ConnectAsync(null))
+                    {
+                        StatusMessage = $"{SelectedVideoSource} connected. Ready to start monitoring.";
+                    }
+                    else
+                    {
+                        StatusMessage = $"Failed to connect to {SelectedVideoSource}. Please check settings.";
+                    }
                 }
                 else
                 {
-                    StatusMessage = $"Failed to connect to {SelectedVideoSource}. Please check settings.";
+                    StatusMessage = "Select a video file to start monitoring";
                 }
             }
             catch (Exception ex)
