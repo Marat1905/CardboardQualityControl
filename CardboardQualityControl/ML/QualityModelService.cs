@@ -4,6 +4,7 @@ using Microsoft.ML;
 using OpenCvSharp;
 using System.IO;
 using System.Text.Json;
+using System.Windows.Controls;
 
 namespace CardboardQualityControl.ML
 {
@@ -15,6 +16,7 @@ namespace CardboardQualityControl.ML
         private ITransformer? _model;
         private PredictionEngine<ModelInput, ModelOutput>? _predictor;
         private string[] _classLabels = Array.Empty<string>();
+        private object _predictLock;
 
         public event Action<ModelOutput>? PredictionReady;
 
@@ -76,38 +78,41 @@ namespace CardboardQualityControl.ML
 
         public ModelOutput Predict(Mat image)
         {
-            if (_predictor == null)
+            lock (_predictLock) // Добавьте блокировку если модель не потокобезопасна
             {
-                _logger.LogWarning("Model is not loaded");
-                return new ModelOutput { DefectType = DefectType.None, Confidence = 0 };
-            }
+                if (_predictor == null)
+                {
+                    _logger.LogWarning("Model is not loaded");
+                    return new ModelOutput { DefectType = DefectType.None, Confidence = 0 };
+                }
 
-            try
-            {
-                // Preprocess image
-                using var resized = new Mat();
-                Cv2.Resize(image, resized, new Size(_settings.InputWidth, _settings.InputHeight));
+                try
+                {
+                    // Preprocess image
+                    using var resized = new Mat();
+                    Cv2.Resize(image, resized, new Size(_settings.InputWidth, _settings.InputHeight));
 
-                // Convert to byte array (RGB format)
-                var imageBytes = resized.ToBytes(".jpg");
+                    // Convert to byte array (RGB format)
+                    var imageBytes = resized.ToBytes(".jpg");
 
-                // Create input
-                var input = new ModelInput { Image = imageBytes };
+                    // Create input
+                    var input = new ModelInput { Image = imageBytes };
 
-                // Make prediction
-                var prediction = _predictor.Predict(input);
+                    // Make prediction
+                    var prediction = _predictor.Predict(input);
 
-                // Post-process prediction
-                prediction.DefectType = GetDefectTypeFromPrediction(prediction);
-                prediction.Confidence = GetConfidence(prediction);
+                    // Post-process prediction
+                    prediction.DefectType = GetDefectTypeFromPrediction(prediction);
+                    prediction.Confidence = GetConfidence(prediction);
 
-                PredictionReady?.Invoke(prediction);
-                return prediction;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to make prediction");
-                return new ModelOutput { DefectType = DefectType.None, Confidence = 0 };
+                    PredictionReady?.Invoke(prediction);
+                    return prediction;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to make prediction");
+                    return new ModelOutput { DefectType = DefectType.None, Confidence = 0 };
+                }
             }
         }
 

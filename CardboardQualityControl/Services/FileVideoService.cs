@@ -3,6 +3,7 @@ using OpenCvSharp;
 using Microsoft.Extensions.Logging;
 using CardboardQualityControl.Models;
 using System.IO;
+using System.Diagnostics;
 
 namespace CardboardQualityControl.Services
 {
@@ -15,7 +16,9 @@ namespace CardboardQualityControl.Services
         private CancellationTokenSource? _cancellationTokenSource;
         private string _currentVideoPath;
         private bool _isDialogOpen;
-        private readonly object _captureLock = new object(); // Блокировка для потокобезопасности
+        private readonly object _captureLock = new object();
+        private Stopwatch _frameTimer;
+        private double _frameDelayMs;
 
         public event Action<Mat>? FrameReady;
         public bool IsConnected => _capture?.IsOpened() == true;
@@ -32,6 +35,7 @@ namespace CardboardQualityControl.Services
             _settings = settings;
             _currentVideoPath = settings.Path;
             _isDialogOpen = false;
+            _frameTimer = new Stopwatch();
         }
 
         public async Task<bool> ConnectAsync()
@@ -71,6 +75,11 @@ namespace CardboardQualityControl.Services
                         _capture = null;
                         return false;
                     }
+
+                    // Рассчитываем задержку между кадрами на основе FPS
+                    double fps = _capture.Fps;
+                    _frameDelayMs = fps > 0 ? 1000.0 / fps : 33.33;
+                    _logger.LogInformation("Video FPS: {FPS}, Frame delay: {Delay}ms", fps, _frameDelayMs);
                 }
 
                 CurrentVideoPath = filePath;
@@ -121,6 +130,7 @@ namespace CardboardQualityControl.Services
                 _capture?.Dispose();
                 _capture = null;
             }
+            _frameTimer.Stop();
             _logger.LogInformation("Video file closed");
         }
 
@@ -141,6 +151,7 @@ namespace CardboardQualityControl.Services
             {
                 _cancellationTokenSource = new CancellationTokenSource();
                 _isCapturing = true;
+                _frameTimer.Restart();
 
                 _ = Task.Run(() => CaptureFrames(_cancellationTokenSource.Token));
 
@@ -162,6 +173,7 @@ namespace CardboardQualityControl.Services
                 _cancellationTokenSource?.Dispose();
                 _cancellationTokenSource = null;
                 _isCapturing = false;
+                _frameTimer.Stop();
 
                 _logger.LogInformation("Stopped playing video file");
             }
@@ -173,8 +185,13 @@ namespace CardboardQualityControl.Services
 
         private async Task CaptureFrames(CancellationToken cancellationToken)
         {
+            var stopwatch = new Stopwatch();
+            var targetFrameTime = TimeSpan.FromMilliseconds(_frameDelayMs);
+
             while (!cancellationToken.IsCancellationRequested)
             {
+                stopwatch.Restart();
+
                 try
                 {
                     VideoCapture? localCapture;
@@ -189,6 +206,26 @@ namespace CardboardQualityControl.Services
                         continue;
                     }
 
+                    // Проверяем конец видео
+                    double currentFramePos = 0;
+                    double totalFrames = 0;
+
+                    lock (_captureLock)
+                    {
+                        currentFramePos = localCapture.Get(VideoCaptureProperties.PosFrames);
+                        totalFrames = localCapture.Get(VideoCaptureProperties.FrameCount);
+                    }
+
+                    // Если достигли конца видео, перематываем в начало
+                    if (currentFramePos >= totalFrames - 1)
+                    {
+                        lock (_captureLock)
+                        {
+                            localCapture.Set(VideoCaptureProperties.PosFrames, 0);
+                        }
+                        continue;
+                    }
+
                     using (var frame = new Mat())
                     {
                         bool readSuccess;
@@ -197,33 +234,40 @@ namespace CardboardQualityControl.Services
                             readSuccess = localCapture.Read(frame) && !frame.Empty();
                         }
 
-                        if (readSuccess)
+                        if (!readSuccess)
                         {
-                            FrameReady?.Invoke(frame.Clone());
-                        }
-                        else
-                        {
-                            // End of video, restart from beginning
+                            // Если не удалось прочитать, перематываем в начало
                             lock (_captureLock)
                             {
                                 localCapture.Set(VideoCaptureProperties.PosFrames, 0);
                             }
+                            continue;
                         }
+
+                        // Отправляем кадр
+                        FrameReady?.Invoke(frame.Clone());
                     }
 
-                    // Adjust delay based on video FPS
-                    double fps;
-                    lock (_captureLock)
+                    // Точная синхронизация времени
+                    stopwatch.Stop();
+                    var elapsed = stopwatch.Elapsed;
+                    var remainingTime = targetFrameTime - elapsed;
+
+                    if (remainingTime > TimeSpan.Zero)
                     {
-                        fps = localCapture.Fps;
+                        await Task.Delay(remainingTime, cancellationToken);
                     }
-
-                    var delay = fps > 0 ? (int)(1000 / fps) : 33;
-                    await Task.Delay(delay, cancellationToken);
+                    else
+                    {
+                        // Если обработка заняла больше времени, чем нужно для одного кадра,
+                        // продолжаем без задержки, но логируем предупреждение
+                        _logger.LogWarning("Frame processing too slow: {ElapsedMs}ms vs target {TargetMs}ms",
+                            elapsed.TotalMilliseconds, targetFrameTime.TotalMilliseconds);
+                        await Task.Yield();
+                    }
                 }
                 catch (OperationCanceledException)
                 {
-                    // Нормальное завершение при отмене
                     break;
                 }
                 catch (Exception ex)
@@ -238,7 +282,6 @@ namespace CardboardQualityControl.Services
         {
             try
             {
-                // Асинхронный Dispose с таймаутом
                 var disconnectTask = DisconnectAsync();
                 if (!disconnectTask.Wait(TimeSpan.FromSeconds(5)))
                 {
@@ -252,6 +295,7 @@ namespace CardboardQualityControl.Services
                 }
 
                 _cancellationTokenSource?.Dispose();
+                _frameTimer.Stop();
             }
             catch (Exception ex)
             {

@@ -199,7 +199,7 @@ namespace CardboardQualityControl.ViewModels
 
         private async Task SelectVideoFileAsync()
         {
-            if (_isSelectingFile) return; // Защита от повторного входа
+            if (_isSelectingFile) return;
 
             try
             {
@@ -210,26 +210,34 @@ namespace CardboardQualityControl.ViewModels
                     await StopMonitoringAsync();
                 }
 
-                // Получаем сервис файлового видео
-                var fileVideoService = _serviceProvider.GetService<FileVideoService>();
+                // Создаем новый файловый сервис
+                var fileVideoService = _videoServiceFactory.CreateVideoService(VideoSourceType.FileVideo) as FileVideoService;
                 if (fileVideoService == null)
                 {
                     StatusMessage = "File video service not available";
                     return;
                 }
 
-                // Открываем диалог выбора файла - ВЫЗЫВАЕМ БЕЗ ПАРАМЕТРОВ
-                bool connected = await fileVideoService.ConnectAsync();
+                // Вызываем ConnectAsync с null для открытия диалога
+                bool connected = await fileVideoService.ConnectAsync(null);
 
                 if (connected)
                 {
-                    // Используем свойство CurrentVideoPath из FileVideoService
                     CurrentVideoPath = fileVideoService.CurrentVideoPath;
                     StatusMessage = $"Selected video: {Path.GetFileName(CurrentVideoPath)}";
 
                     // Обновляем сервис
+                    if (_videoService != null)
+                    {
+                        _videoService.FrameReady -= OnFrameReady;
+                        _videoService.Dispose();
+                    }
+
                     _videoService = fileVideoService;
                     _videoService.FrameReady += OnFrameReady;
+
+                    // АВТОМАТИЧЕСКИ ЗАПУСКАЕМ МОНИТОРИНГ после выбора файла
+                    await StartMonitoringAfterFileSelect();
                 }
             }
             catch (Exception ex)
@@ -240,6 +248,25 @@ namespace CardboardQualityControl.ViewModels
             finally
             {
                 _isSelectingFile = false;
+            }
+        }
+
+        private async Task StartMonitoringAfterFileSelect()
+        {
+            try
+            {
+                if (_videoService != null && _videoService.IsConnected)
+                {
+                    await _videoService.StartCaptureAsync();
+                    IsMonitoring = true;
+                    StatusMessage = $"Monitoring started using {SelectedVideoSource}";
+                    _logger.LogInformation("Monitoring started using {Source}", SelectedVideoSource);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to start monitoring after file selection");
+                StatusMessage = "Error starting monitoring";
             }
         }
 
@@ -295,42 +322,62 @@ namespace CardboardQualityControl.ViewModels
         {
             try
             {
-                using (frame)
+                using (var frameClone = frame.Clone())
                 {
-                    // Convert Mat to BitmapSource for display
+                    // Быстрое обновление UI с кадром
                     BitmapSource bitmapSource;
                     try
                     {
-                        // Пробуем основной метод
-                        bitmapSource = Converters.BitmapSourceConverter.ToBitmapSourceAlternative(frame);
+                        bitmapSource = Converters.BitmapSourceConverter.ToBitmapSourceAlternative(frameClone);
                     }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Primary conversion failed, using alternative method");
-                        // Используем альтернативный метод
-                        bitmapSource = Converters.BitmapSourceConverter.ToBitmapSourceAlternative(frame);
+                        bitmapSource = Converters.BitmapSourceConverter.ToBitmapSourceAlternative(frameClone);
                     }
 
                     await _dispatcher.InvokeAsync(() =>
                     {
                         CurrentFrame = bitmapSource;
+                        TotalFramesProcessed++; // Счетчик кадров в UI потоке
                     });
 
-                    // Process frame with model
-                    var prediction = _modelService.Predict(frame.Clone());
-                    TotalFramesProcessed++;
+                    // Асинхронная обработка ML модели без блокировки видео потока
+                    _ = ProcessFrameAsync(frameClone.Clone());
+                }
+            }
+            catch (ObjectDisposedException ex)
+            {
+                _logger.LogWarning(ex, "Frame already disposed, skipping processing");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing frame");
+            }
+        }
 
-                    // Update defect count if defect detected
+        private async Task ProcessFrameAsync(Mat frame)
+        {
+            try
+            {
+                using (frame)
+                {
+                    var prediction = _modelService.Predict(frame);
+
+                    // Обновляем счетчик дефектов через Dispatcher
                     if (prediction.DefectType != DefectType.None &&
                         prediction.Confidence >= _config.ModelSettings.ConfidenceThreshold)
                     {
-                        DefectCount++;
+                        await _dispatcher.InvokeAsync(() =>
+                        {
+                            DefectCount++;
+                        });
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing frame");
+                _logger.LogError(ex, "Error in async frame processing");
             }
         }
 
@@ -365,26 +412,31 @@ namespace CardboardQualityControl.ViewModels
 
         private async Task StartMonitoringAsync()
         {
-            if (_isSelectingFile) return; // Защита от повторного входа
+            if (_isSelectingFile) return;
 
             try
             {
                 StatusMessage = $"Connecting to {SelectedVideoSource}...";
 
-                if (SelectedVideoSource == VideoSourceType.FileVideo &&
-                    _videoService is FileVideoService fileVideoService &&
-                    string.IsNullOrEmpty(CurrentVideoPath))
+                // Для файлового видео: если файл уже выбран, используем его
+                // Если не выбран - открываем диалог
+                if (SelectedVideoSource == VideoSourceType.FileVideo)
                 {
-                    // Если файл не выбран, открываем диалог
-                    await SelectVideoFileAsync();
-                    if (string.IsNullOrEmpty(CurrentVideoPath))
+                    var fileVideoService = _videoService as FileVideoService;
+                    if (fileVideoService != null && string.IsNullOrEmpty(CurrentVideoPath))
                     {
-                        return; // Пользователь отменил выбор файла
+                        // Файл не выбран, открываем диалог
+                        await SelectVideoFileAsync();
+                        if (string.IsNullOrEmpty(CurrentVideoPath))
+                        {
+                            return; // Пользователь отменил выбор файла
+                        }
                     }
                 }
 
-                // УБРАТЬ ПАРАМЕТРЫ из вызова ConnectAsync
-                if (!await _videoService.ConnectAsync())
+                // Подключаемся к видео источнику
+                bool connected = await _videoService.ConnectAsync();
+                if (!connected)
                 {
                     StatusMessage = $"Failed to connect to {SelectedVideoSource}";
                     return;
@@ -502,14 +554,14 @@ namespace CardboardQualityControl.ViewModels
                 if (SelectedVideoSource != VideoSourceType.FileVideo)
                 {
                     // ИСПРАВЛЕНО: добавлен параметр null
-                    if (await _videoService.ConnectAsync(null))
-                    {
-                        StatusMessage = $"{SelectedVideoSource} connected. Ready to start monitoring.";
-                    }
-                    else
-                    {
-                        StatusMessage = $"Failed to connect to {SelectedVideoSource}. Please check settings.";
-                    }
+                    //if (await _videoService.ConnectAsync(null))
+                    //{
+                    //    StatusMessage = $"{SelectedVideoSource} connected. Ready to start monitoring.";
+                    //}
+                    //else
+                    //{
+                    //    StatusMessage = $"Failed to connect to {SelectedVideoSource}. Please check settings.";
+                    //}
                 }
                 else
                 {
