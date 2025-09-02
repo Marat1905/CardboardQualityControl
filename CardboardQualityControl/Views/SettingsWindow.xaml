@@ -1,0 +1,395 @@
+﻿<Window x:Class="CardboardQualityControl.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:CardboardQualityControl.Views"
+        mc:Ignorable="d"
+        Title="Settings" 
+        Height="800" 
+        Width="1000"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="10">
+        <TabControl>
+            <!-- Camera Settings Tab -->
+            <TabItem Header="Camera Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <GroupBox Header="Video Source">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Select Video Source:" Margin="0,0,0,5"/>
+                                <ComboBox x:Name="VideoSourceComboBox" 
+                                          SelectedValue="{Binding Config.VideoSource}"
+                                          DisplayMemberPath="Value"
+                                          SelectedValuePath="Key"
+                                          Margin="0,0,0,10"/>
+
+                                <TextBlock Text="Current Source:" Margin="0,10,0,5"/>
+                                <TextBlock Text="{Binding Config.CurrentVideoSourceType}" 
+                                           FontWeight="Bold" Margin="0,0,0,10"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Basler Camera Settings -->
+                        <GroupBox Header="Basler Camera Settings" Margin="0,10,0,0">
+                            <StackPanel Margin="5">
+                                <StackPanel Orientation="Horizontal" Margin="0,5">
+                                    <CheckBox Content="Auto Exposure" 
+                                              IsChecked="{Binding Config.BaslerCameraSettings.AutoExposure}"
+                                              Margin="0,0,10,0"/>
+                                    <CheckBox Content="Auto Gain" 
+                                              IsChecked="{Binding Config.BaslerCameraSettings.AutoGain}"
+                                              Margin="0,0,10,0"/>
+                                    <CheckBox Content="Auto White Balance" 
+                                              IsChecked="{Binding Config.BaslerCameraSettings.AutoWhiteBalance}"/>
+                                </StackPanel>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Exposure Time (μs):" Grid.Row="0" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="0" Grid.Column="1" 
+                                            Minimum="10" Maximum="1000000" 
+                                            Value="{Binding Config.BaslerCameraSettings.ExposureTime}"
+                                            IsEnabled="{Binding Config.BaslerCameraSettings.AutoExposure, Converter={StaticResource InverseBooleanConverter}}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" 
+                                               Text="{Binding Config.BaslerCameraSettings.ExposureTime}"
+                                               Margin="5,0,0,0"/>
+
+                                    <TextBlock Text="Gain (dB):" Grid.Row="1" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" 
+                                            Minimum="0" Maximum="48" 
+                                            Value="{Binding Config.BaslerCameraSettings.Gain}"
+                                            IsEnabled="{Binding Config.BaslerCameraSettings.AutoGain, Converter={StaticResource InverseBooleanConverter}}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" 
+                                               Text="{Binding Config.BaslerCameraSettings.Gain}"
+                                               Margin="5,0,0,0"/>
+
+                                    <TextBlock Text="Pixel Format:" Grid.Row="2" Grid.Column="0" Margin="0,5"/>
+                                    <ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                                              ItemsSource="{Binding PixelFormats}"
+                                              SelectedItem="{Binding Config.BaslerCameraSettings.PixelFormat}"
+                                              Margin="5"/>
+
+                                    <TextBlock Text="Width:" Grid.Row="3" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2"
+                                             Text="{Binding Config.BaslerCameraSettings.Width}"
+                                             Margin="5"/>
+
+                                    <TextBlock Text="Height:" Grid.Row="4" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2"
+                                             Text="{Binding Config.BaslerCameraSettings.Height}"
+                                             Margin="5"/>
+
+                                    <TextBlock Text="FPS:" Grid.Row="5" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="5" Grid.Column="1" 
+                                            Minimum="1" Maximum="120" 
+                                            Value="{Binding Config.BaslerCameraSettings.FPS}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="5" Grid.Column="2" 
+                                               Text="{Binding Config.BaslerCameraSettings.FPS}"
+                                               Margin="5,0,0,0"/>
+
+                                    <TextBlock Text="Gamma:" Grid.Row="6" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="6" Grid.Column="1" 
+                                            Minimum="0.1" Maximum="4.0" 
+                                            Value="{Binding Config.BaslerCameraSettings.Gamma}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="6" Grid.Column="2" 
+                                               Text="{Binding Config.BaslerCameraSettings.Gamma}"
+                                               Margin="5,0,0,0"/>
+
+                                    <TextBlock Text="Brightness:" Grid.Row="7" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="7" Grid.Column="1" 
+                                            Minimum="-1" Maximum="1" 
+                                            Value="{Binding Config.BaslerCameraSettings.Brightness}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="7" Grid.Column="2" 
+                                               Text="{Binding Config.BaslerCameraSettings.Brightness}"
+                                               Margin="5,0,0,0"/>
+
+                                    <TextBlock Text="Contrast:" Grid.Row="8" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="8" Grid.Column="1" 
+                                            Minimum="0" Maximum="2" 
+                                            Value="{Binding Config.BaslerCameraSettings.Contrast}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="8" Grid.Column="2" 
+                                               Text="{Binding Config.BaslerCameraSettings.Contrast}"
+                                               Margin="5,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- IP Camera Settings -->
+                        <GroupBox Header="IP Camera Settings" Margin="0,10,0,0">
+                            <StackPanel Margin="5">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="URL:" Grid.Row="0" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" 
+                                             Text="{Binding Config.IpCameraSettings.Url}"
+                                             Margin="5"/>
+
+                                    <TextBlock Text="Username:" Grid.Row="1" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" 
+                                             Text="{Binding Config.IpCameraSettings.Username}"
+                                             Margin="5"/>
+
+                                    <TextBlock Text="Password:" Grid.Row="2" Grid.Column="0" Margin="0,5"/>
+                                    <PasswordBox Grid.Row="2" Grid.Column="1" 
+                                                 Margin="5"/>
+
+                                    <TextBlock Text="Width:" Grid.Row="3" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" 
+                                             Text="{Binding Config.IpCameraSettings.Width}"
+                                             Margin="5"/>
+
+                                    <TextBlock Text="Height:" Grid.Row="4" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="4" Grid.Column="1" 
+                                             Text="{Binding Config.IpCameraSettings.Height}"
+                                             Margin="5"/>
+
+                                    <TextBlock Text="FPS:" Grid.Row="5" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="5" Grid.Column="1" 
+                                            Minimum="1" Maximum="60" 
+                                            Value="{Binding Config.IpCameraSettings.FPS}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2"
+                                               Text="{Binding Config.IpCameraSettings.FPS}"
+                                               HorizontalAlignment="Right" Margin="5,0,0,0"/>
+
+                                    <TextBlock Text="Brightness:" Grid.Row="6" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="6" Grid.Column="1" 
+                                            Minimum="-1" Maximum="1" 
+                                            Value="{Binding Config.IpCameraSettings.Brightness}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2"
+                                               Text="{Binding Config.IpCameraSettings.Brightness}"
+                                               HorizontalAlignment="Right" Margin="5,0,0,0"/>
+
+                                    <TextBlock Text="Contrast:" Grid.Row="7" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="7" Grid.Column="1" 
+                                            Minimum="0" Maximum="2" 
+                                            Value="{Binding Config.IpCameraSettings.Contrast}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="7" Grid.Column="1" Grid.ColumnSpan="2"
+                                               Text="{Binding Config.IpCameraSettings.Contrast}"
+                                               HorizontalAlignment="Right" Margin="5,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- File Video Settings -->
+                        <GroupBox Header="File Video Settings" Margin="0,10,0,0">
+                            <StackPanel Margin="5">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Default Path:" Grid.Row="0" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" 
+                                             Text="{Binding Config.FileVideoSettings.Path}"
+                                             Margin="5"/>
+                                    <Button Grid.Row="0" Grid.Column="2" 
+                                            Content="Browse..." 
+                                            Click="BrowseVideoFile_Click"
+                                            Margin="5"/>
+
+                                    <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                                              Content="Loop Video"
+                                              IsChecked="{Binding Config.FileVideoSettings.LoopVideo}"
+                                              Margin="0,10,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Recording Settings Tab -->
+            <TabItem Header="Recording Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <GroupBox Header="Video Recording">
+                            <StackPanel Margin="5">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Output Path:" Grid.Row="0" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" 
+                                             Text="{Binding Config.VideoRecordingSettings.OutputPath}"
+                                             Margin="5"/>
+                                    <Button Grid.Row="0" Grid.Column="2" 
+                                            Content="Browse..." 
+                                            Click="BrowseOutputPath_Click"
+                                            Margin="5"/>
+
+                                    <TextBlock Text="Codec:" Grid.Row="1" Grid.Column="0" Margin="0,5"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                              ItemsSource="{Binding VideoCodecs}"
+                                              SelectedItem="{Binding Config.VideoRecordingSettings.Codec}"
+                                              Margin="5"/>
+
+                                    <TextBlock Text="FPS:" Grid.Row="2" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="2" Grid.Column="1" 
+                                            Minimum="1" Maximum="60" 
+                                            Value="{Binding Config.VideoRecordingSettings.FPS}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" 
+                                               Text="{Binding Config.VideoRecordingSettings.FPS}"
+                                               Margin="5,0,0,0"/>
+
+                                    <TextBlock Text="Quality:" Grid.Row="3" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="3" Grid.Column="1" 
+                                            Minimum="1" Maximum="100" 
+                                            Value="{Binding Config.VideoRecordingSettings.Quality}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" 
+                                               Text="{Binding Config.VideoRecordingSettings.Quality}"
+                                               Margin="5,0,0,0"/>
+
+                                    <TextBlock Text="Max Duration (min):" Grid.Row="4" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="4" Grid.Column="1" 
+                                            Minimum="1" Maximum="360" 
+                                            Value="{Binding Config.VideoRecordingSettings.MaxDurationMinutes}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="4" Grid.Column="2" 
+                                               Text="{Binding Config.VideoRecordingSettings.MaxDurationMinutes}"
+                                               Margin="5,0,0,0"/>
+
+                                    <CheckBox Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="3"
+                                              Content="Record on Defect Detection"
+                                              IsChecked="{Binding Config.VideoRecordingSettings.RecordOnDefect}"
+                                              Margin="0,10,0,0"/>
+
+                                    <TextBlock Text="Pre-record Buffer (sec):" Grid.Row="6" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="6" Grid.Column="1" 
+                                            Minimum="1" Maximum="30" 
+                                            Value="{Binding Config.VideoRecordingSettings.PreRecordSeconds}"
+                                            IsEnabled="{Binding Config.VideoRecordingSettings.RecordOnDefect}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="6" Grid.Column="2" 
+                                               Text="{Binding Config.VideoRecordingSettings.PreRecordSeconds}"
+                                               Margin="5,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Model Settings Tab -->
+            <TabItem Header="Model Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <GroupBox Header="Model Configuration">
+                            <StackPanel Margin="5">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Model Path:" Grid.Row="0" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" 
+                                             Text="{Binding Config.ModelSettings.ModelPath}"
+                                             Margin="5"/>
+                                    <Button Grid.Row="0" Grid.Column="2" 
+                                            Content="Browse..." 
+                                            Click="BrowseModelPath_Click"
+                                            Margin="5"/>
+
+                                    <TextBlock Text="Input Width:" Grid.Row="1" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" 
+                                             Text="{Binding Config.ModelSettings.InputWidth}"
+                                             Margin="5"/>
+
+                                    <TextBlock Text="Input Height:" Grid.Row="2" Grid.Column="0" Margin="0,5"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" 
+                                             Text="{Binding Config.ModelSettings.InputHeight}"
+                                             Margin="5"/>
+
+                                    <TextBlock Text="Confidence Threshold:" Grid.Row="3" Grid.Column="0" Margin="0,5"/>
+                                    <Slider Grid.Row="3" Grid.Column="1" 
+                                            Minimum="0.1" Maximum="1.0" 
+                                            Value="{Binding Config.ModelSettings.ConfidenceThreshold}"
+                                            Margin="5"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" 
+                                               Text="{Binding Config.ModelSettings.ConfidenceThreshold}"
+                                               Margin="5,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,10">
+            <Button Content="Save" Width="80" Margin="0,0,10,0" Click="SaveButton_Click"/>
+            <Button Content="Cancel" Width="80" Margin="0,0,10,0" Click="CancelButton_Click"/>
+            <Button Content="Apply" Width="80" Click="ApplyButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

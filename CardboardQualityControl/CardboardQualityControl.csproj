@@ -18,6 +18,8 @@
 
     <PackageReference Include="LijsDev.Basler.Pylon.NET" Version="7.5.0.15658" />
 
+    <PackageReference Include="LijsDev.Basler.Pylon.NET.x64" Version="7.1.0.25066" />
+
     <PackageReference Include="Microsoft.ML" Version="3.0.1" />
     <PackageReference Include="Microsoft.ML.Vision" Version="3.0.1" />
     <PackageReference Include="Microsoft.ML.ImageAnalytics" Version="3.0.1" />

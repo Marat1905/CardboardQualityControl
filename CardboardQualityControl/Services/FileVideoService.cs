@@ -19,9 +19,18 @@ namespace CardboardQualityControl.Services
         private readonly object _captureLock = new object();
         private Stopwatch _frameTimer;
         private double _frameDelayMs;
+        private OpenCvSharp.VideoWriter? _videoWriter;
+        private string? _currentRecordingPath;
+        private double _fps;
+        private double _currentPosition;
+        private double _totalFrames;
 
         public event Action<Mat>? FrameReady;
         public bool IsConnected => _capture?.IsOpened() == true;
+        public double FPS => _fps;
+        public double CurrentPosition => _currentPosition;
+        public double TotalFrames => _totalFrames;
+        public bool IsRecording => _videoWriter != null && _videoWriter.IsOpened();
 
         public string CurrentVideoPath
         {
@@ -77,9 +86,13 @@ namespace CardboardQualityControl.Services
                     }
 
                     // Рассчитываем задержку между кадрами на основе FPS
-                    double fps = _capture.Fps;
-                    _frameDelayMs = fps > 0 ? 1000.0 / fps : 33.33;
-                    _logger.LogInformation("Video FPS: {FPS}, Frame delay: {Delay}ms", fps, _frameDelayMs);
+                    _fps = _capture.Fps;
+                    _frameDelayMs = _fps > 0 ? 1000.0 / _fps : 33.33;
+                    _totalFrames = _capture.Get(VideoCaptureProperties.FrameCount);
+                    _currentPosition = 0;
+
+                    _logger.LogInformation("Video FPS: {FPS}, Frame delay: {Delay}ms, Total frames: {TotalFrames}",
+                        _fps, _frameDelayMs, _totalFrames);
                 }
 
                 CurrentVideoPath = filePath;
@@ -123,6 +136,7 @@ namespace CardboardQualityControl.Services
 
         public async Task DisconnectAsync()
         {
+            await StopRecordingAsync();
             await StopCaptureAsync();
             lock (_captureLock)
             {
@@ -183,6 +197,18 @@ namespace CardboardQualityControl.Services
             }
         }
 
+        public async Task SeekAsync(double position)
+        {
+            lock (_captureLock)
+            {
+                if (_capture != null && _capture.IsOpened())
+                {
+                    _capture.Set(VideoCaptureProperties.PosFrames, position);
+                    _currentPosition = position;
+                }
+            }
+        }
+
         private async Task CaptureFrames(CancellationToken cancellationToken)
         {
             var stopwatch = new Stopwatch();
@@ -206,24 +232,27 @@ namespace CardboardQualityControl.Services
                         continue;
                     }
 
-                    // Проверяем конец видео
-                    double currentFramePos = 0;
-                    double totalFrames = 0;
-
+                    double currentFramePos;
                     lock (_captureLock)
                     {
                         currentFramePos = localCapture.Get(VideoCaptureProperties.PosFrames);
-                        totalFrames = localCapture.Get(VideoCaptureProperties.FrameCount);
+                        _currentPosition = currentFramePos;
                     }
 
-                    // Если достигли конца видео, перематываем в начало
-                    if (currentFramePos >= totalFrames - 1)
+                    if (currentFramePos >= _totalFrames - 1)
                     {
-                        lock (_captureLock)
+                        if (_settings.LoopVideo)
                         {
-                            localCapture.Set(VideoCaptureProperties.PosFrames, 0);
+                            lock (_captureLock)
+                            {
+                                localCapture.Set(VideoCaptureProperties.PosFrames, 0);
+                            }
                         }
-                        continue;
+                        else
+                        {
+                            await StopCaptureAsync();
+                            break;
+                        }
                     }
 
                     using (var frame = new Mat())
@@ -236,19 +265,25 @@ namespace CardboardQualityControl.Services
 
                         if (!readSuccess)
                         {
-                            // Если не удалось прочитать, перематываем в начало
-                            lock (_captureLock)
+                            if (_settings.LoopVideo)
                             {
-                                localCapture.Set(VideoCaptureProperties.PosFrames, 0);
+                                lock (_captureLock)
+                                {
+                                    localCapture.Set(VideoCaptureProperties.PosFrames, 0);
+                                }
                             }
                             continue;
                         }
 
-                        // Отправляем кадр
                         FrameReady?.Invoke(frame.Clone());
+
+                        // Write to video file if recording
+                        if (IsRecording && _videoWriter != null)
+                        {
+                            _videoWriter.Write(frame);
+                        }
                     }
 
-                    // Точная синхронизация времени
                     stopwatch.Stop();
                     var elapsed = stopwatch.Elapsed;
                     var remainingTime = targetFrameTime - elapsed;
@@ -259,10 +294,6 @@ namespace CardboardQualityControl.Services
                     }
                     else
                     {
-                        // Если обработка заняла больше времени, чем нужно для одного кадра,
-                        // продолжаем без задержки, но логируем предупреждение
-                        _logger.LogWarning("Frame processing too slow: {ElapsedMs}ms vs target {TargetMs}ms",
-                            elapsed.TotalMilliseconds, targetFrameTime.TotalMilliseconds);
                         await Task.Yield();
                     }
                 }
@@ -274,6 +305,78 @@ namespace CardboardQualityControl.Services
                 {
                     _logger.LogError(ex, "Error reading frame from video file");
                     await Task.Delay(1000, cancellationToken);
+                }
+            }
+        }
+
+        public async Task StartRecordingAsync(string outputPath)
+        {
+            try
+            {
+                await StopRecordingAsync();
+
+                var directory = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                lock (_captureLock)
+                {
+                    if (_capture != null)
+                    {
+                        var frameSize = new Size(
+                            (int)_capture.Get(VideoCaptureProperties.FrameWidth),
+                            (int)_capture.Get(VideoCaptureProperties.FrameHeight)
+                        );
+
+                        // Используем FourCC.FromString вместо FourCC.Parse
+                        int fourcc = OpenCvSharp.VideoWriter.FourCC('M', 'J', 'P', 'G'); // MJPG codec для совместимости
+
+                        _videoWriter = new OpenCvSharp.VideoWriter(
+                            outputPath,
+                            fourcc,
+                            _fps,
+                            frameSize,
+                            true // isColor
+                        );
+
+                        if (_videoWriter.IsOpened())
+                        {
+                            _currentRecordingPath = outputPath;
+                            _logger.LogInformation($"Started recording to: {outputPath}");
+                        }
+                        else
+                        {
+                            _logger.LogError("Failed to open video writer");
+                            _videoWriter.Dispose();
+                            _videoWriter = null;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to start recording");
+            }
+        }
+
+        public async Task StopRecordingAsync()
+        {
+            if (_videoWriter != null)
+            {
+                try
+                {
+                    _videoWriter.Release();
+                    _videoWriter.Dispose();
+                    _videoWriter = null;
+
+                    _logger.LogInformation($"Stopped recording: {_currentRecordingPath}");
+                    _currentRecordingPath = null;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error stopping recording");
                 }
             }
         }

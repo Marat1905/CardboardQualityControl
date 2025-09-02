@@ -6,6 +6,6 @@ namespace CardboardQualityControl.Models
     {
         public DefectType DefectType { get; set; }
         public float Confidence { get; set; }
-        public System.Drawing.Rectangle Location { get; set; }
+        public DateTime Timestamp { get; set; }
     }
 }

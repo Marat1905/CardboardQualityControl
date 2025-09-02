@@ -14,6 +14,10 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Windows;
 using CardboardQualityControl.Views;
 using System.IO;
+using System;
+using System.Linq;
+using System.Collections.Generic;
+using Microsoft.Win32;
 
 namespace CardboardQualityControl.ViewModels
 {
@@ -35,7 +39,12 @@ namespace CardboardQualityControl.ViewModels
         private int _totalFramesProcessed;
         private VideoSourceType _selectedVideoSource;
         private string _currentVideoPath = string.Empty;
-        private bool _isSelectingFile; // Флаг для отслеживания выбора файла
+        private bool _isSelectingFile;
+        private double _currentFPS;
+        private double _currentPosition;
+        private double _totalFrames;
+        private bool _isRecording;
+        private string _recordingStatus = "Not Recording";
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -137,6 +146,59 @@ namespace CardboardQualityControl.ViewModels
             }
         }
 
+        public double CurrentFPS
+        {
+            get => _currentFPS;
+            set
+            {
+                _currentFPS = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public double CurrentPosition
+        {
+            get => _currentPosition;
+            set
+            {
+                _currentPosition = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public double TotalFrames
+        {
+            get => _totalFrames;
+            set
+            {
+                _totalFrames = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool IsRecording
+        {
+            get => _isRecording;
+            set
+            {
+                _isRecording = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public string RecordingStatus
+        {
+            get => _recordingStatus;
+            set
+            {
+                _recordingStatus = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public ObservableCollection<DefectInfo> Defects { get; } = new();
+        public ObservableCollection<string> LogMessages { get; } = new();
+
         public ICommand SwitchVideoSourceCommand { get; }
         public ICommand StartMonitoringCommand { get; }
         public ICommand StopMonitoringCommand { get; }
@@ -144,6 +206,10 @@ namespace CardboardQualityControl.ViewModels
         public ICommand SelectVideoFileCommand { get; }
         public ICommand OpenTrainingDialogCommand { get; }
         public ICommand ResetCountersCommand { get; }
+        public ICommand StartRecordingCommand { get; }
+        public ICommand StopRecordingCommand { get; }
+        public ICommand SeekCommand { get; }
+        public ICommand OpenSettingsCommand { get; }
 
         public MainViewModel(ILogger<MainViewModel> logger,
                            VideoServiceFactory videoServiceFactory,
@@ -164,23 +230,57 @@ namespace CardboardQualityControl.ViewModels
             _videoService = _videoServiceFactory.CreateVideoService(SelectedVideoSource);
 
             // Setup commands
-            SwitchVideoSourceCommand = new RelayCommand(async param =>
-                await SwitchVideoSourceAsync((VideoSourceType)param));
+            SwitchVideoSourceCommand = new RelayCommand(
+                param => _ = SwitchVideoSourceAsync((VideoSourceType)param),
+                param => !IsMonitoring
+            );
 
-            StartMonitoringCommand = new RelayCommand(async _ => await StartMonitoringAsync(),
-                _ => !IsMonitoring);
+            StartMonitoringCommand = new RelayCommand(
+                _ => _ = StartMonitoringAsync(),
+                _ => !IsMonitoring && _videoService.IsConnected
+            );
 
-            StopMonitoringCommand = new RelayCommand(async _ => await StopMonitoringAsync(),
-                _ => IsMonitoring);
+            StopMonitoringCommand = new RelayCommand(
+                _ => _ = StopMonitoringAsync(),
+                _ => IsMonitoring
+            );
 
-            CaptureTrainingImageCommand = new RelayCommand(async _ => await CaptureTrainingImageAsync(),
-                _ => IsMonitoring && CurrentFrame != null);
+            CaptureTrainingImageCommand = new RelayCommand(
+                _ => _ = CaptureTrainingImageAsync(),
+                _ => IsMonitoring && CurrentFrame != null
+            );
 
-            SelectVideoFileCommand = new RelayCommand(async _ => await SelectVideoFileAsync(),
-                _ => SelectedVideoSource == VideoSourceType.FileVideo && !_isSelectingFile); // Добавлена проверка
+            SelectVideoFileCommand = new RelayCommand(
+                _ => _ = SelectVideoFileAsync(),
+                _ => SelectedVideoSource == VideoSourceType.FileVideo && !_isSelectingFile
+            );
 
-            OpenTrainingDialogCommand = new RelayCommand(_ => OpenTrainingDialog());
-            ResetCountersCommand = new RelayCommand(_ => ResetCounters());
+            OpenTrainingDialogCommand = new RelayCommand(
+                _ => OpenTrainingDialog()
+            );
+
+            ResetCountersCommand = new RelayCommand(
+                _ => ResetCounters()
+            );
+
+            StartRecordingCommand = new RelayCommand(
+                _ => _ = StartRecordingAsync(),
+                _ => IsMonitoring && !IsRecording
+            );
+
+            StopRecordingCommand = new RelayCommand(
+                _ => _ = StopRecordingAsync(),
+                _ => IsRecording
+            );
+
+            SeekCommand = new RelayCommand<double>(
+                position => _ = SeekAsync(position),
+                position => _videoService.IsConnected && position >= 0 && position <= TotalFrames
+            );
+
+            OpenSettingsCommand = new RelayCommand(
+                _ => OpenSettings()
+            );
 
             // Subscribe to events
             _videoService.FrameReady += OnFrameReady;
@@ -324,22 +424,30 @@ namespace CardboardQualityControl.ViewModels
             {
                 using (var frameClone = frame.Clone())
                 {
+                    // Обновляем информацию о FPS и позиции
+                    await _dispatcher.InvokeAsync(() =>
+                    {
+                        CurrentFPS = _videoService.FPS;
+                        CurrentPosition = _videoService.CurrentPosition;
+                        TotalFrames = _videoService.TotalFrames;
+                    });
+
                     // Быстрое обновление UI с кадром
                     BitmapSource bitmapSource;
                     try
                     {
-                        bitmapSource = Converters.BitmapSourceConverter.ToBitmapSourceAlternative(frameClone);
+                        bitmapSource = BitmapSourceConverter.ToBitmapSourceAlternative(frameClone);
                     }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Primary conversion failed, using alternative method");
-                        bitmapSource = Converters.BitmapSourceConverter.ToBitmapSourceAlternative(frameClone);
+                        bitmapSource = BitmapSourceConverter.ToBitmapSourceAlternative(frameClone);
                     }
 
                     await _dispatcher.InvokeAsync(() =>
                     {
                         CurrentFrame = bitmapSource;
-                        TotalFramesProcessed++; // Счетчик кадров в UI потоке
+                        TotalFramesProcessed++;
                     });
 
                     // Асинхронная обработка ML модели без блокировки видео потока
@@ -371,6 +479,17 @@ namespace CardboardQualityControl.ViewModels
                         await _dispatcher.InvokeAsync(() =>
                         {
                             DefectCount++;
+
+                            // Добавляем в список дефектов
+                            var defectInfo = new DefectInfo
+                            {
+                                DefectType = prediction.DefectType,
+                                Confidence = prediction.Confidence,
+                                Timestamp = DateTime.Now
+                            };
+
+                            Defects.Add(defectInfo);
+                            LogMessages.Add($"{DateTime.Now:HH:mm:ss} - {prediction.DefectType} ({(prediction.Confidence * 100):F1}%)");
                         });
                     }
                 }
@@ -391,7 +510,7 @@ namespace CardboardQualityControl.ViewModels
                     {
                         DefectType = prediction.DefectType,
                         Confidence = prediction.Confidence,
-                        Location = new System.Drawing.Rectangle(0, 0, 0, 0)
+                        Timestamp = DateTime.Now
                     };
 
                     if (HasDefect)
@@ -523,7 +642,7 @@ namespace CardboardQualityControl.ViewModels
                     if (trainingDialog != null)
                     {
                         // Получаем главное окно через Dispatcher
-                        var mainWindow = System.Windows.Application.Current.MainWindow;
+                        var mainWindow = Application.Current.MainWindow;
                         trainingDialog.Owner = mainWindow;
                         trainingDialog.ShowDialog();
                     }
@@ -536,10 +655,85 @@ namespace CardboardQualityControl.ViewModels
             }
         }
 
+        private void OpenSettings()
+        {
+            try
+            {
+                _dispatcher.Invoke(() =>
+                {
+                    var settingsWindow = _serviceProvider.GetService<SettingsWindow>();
+                    if (settingsWindow != null)
+                    {
+                        settingsWindow.Owner = Application.Current.MainWindow;
+                        settingsWindow.ShowDialog();
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to open settings");
+                StatusMessage = "Error opening settings";
+            }
+        }
+
+        private async Task StartRecordingAsync()
+        {
+            try
+            {
+                var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                var fileName = $"recording_{timestamp}.avi";
+                var outputPath = Path.Combine(_config.VideoRecordingSettings.OutputPath, fileName);
+
+                await _videoService.StartRecordingAsync(outputPath);
+                IsRecording = true;
+                RecordingStatus = $"Recording: {Path.GetFileName(outputPath)}";
+                StatusMessage = "Recording started";
+                _logger.LogInformation("Recording started: {Path}", outputPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to start recording");
+                StatusMessage = $"Failed to start recording: {ex.Message}";
+            }
+        }
+
+        private async Task StopRecordingAsync()
+        {
+            try
+            {
+                await _videoService.StopRecordingAsync();
+                IsRecording = false;
+                RecordingStatus = "Not Recording";
+                StatusMessage = "Recording stopped";
+                _logger.LogInformation("Recording stopped");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to stop recording");
+                StatusMessage = $"Failed to stop recording: {ex.Message}";
+            }
+        }
+
+        private async Task SeekAsync(double position)
+        {
+            try
+            {
+                await _videoService.SeekAsync(position);
+                StatusMessage = $"Seeked to position: {position}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to seek");
+                StatusMessage = $"Failed to seek: {ex.Message}";
+            }
+        }
+
         private void ResetCounters()
         {
             DefectCount = 0;
             TotalFramesProcessed = 0;
+            Defects.Clear();
+            LogMessages.Clear();
             StatusMessage = "Counters reset";
             _logger.LogInformation("Counters reset");
         }
@@ -553,15 +747,7 @@ namespace CardboardQualityControl.ViewModels
                 // Предварительное подключение к видео источнику (кроме файлового)
                 if (SelectedVideoSource != VideoSourceType.FileVideo)
                 {
-                    // ИСПРАВЛЕНО: добавлен параметр null
-                    //if (await _videoService.ConnectAsync(null))
-                    //{
-                    //    StatusMessage = $"{SelectedVideoSource} connected. Ready to start monitoring.";
-                    //}
-                    //else
-                    //{
-                    //    StatusMessage = $"Failed to connect to {SelectedVideoSource}. Please check settings.";
-                    //}
+                    StatusMessage = $"{SelectedVideoSource} ready. Click 'Start Monitoring' to begin.";
                 }
                 else
                 {
