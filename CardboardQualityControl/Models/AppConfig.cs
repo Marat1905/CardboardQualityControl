@@ -57,6 +57,9 @@ namespace CardboardQualityControl.Models
     {
         [JsonPropertyName("path")]
         public string Path { get; set; } = "C:\\Videos\\cardboard_defects.mp4";
+
+        [JsonPropertyName("Loop")]
+        public bool LoopVideo { get; set; } = false;
     }
 
     public class ModelSettings

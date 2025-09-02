@@ -35,6 +35,7 @@ namespace CardboardQualityControl.ViewModels
         private int _totalFramesProcessed;
         private VideoSourceType _selectedVideoSource;
         private string _currentVideoPath = string.Empty;
+        private bool _isSelectingFile; // Флаг для отслеживания выбора файла
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -157,6 +158,7 @@ namespace CardboardQualityControl.ViewModels
             _config = config;
             _dispatcher = dispatcher;
             _serviceProvider = serviceProvider;
+            _isSelectingFile = false;
 
             SelectedVideoSource = _config.CurrentVideoSourceType;
             _videoService = _videoServiceFactory.CreateVideoService(SelectedVideoSource);
@@ -175,7 +177,7 @@ namespace CardboardQualityControl.ViewModels
                 _ => IsMonitoring && CurrentFrame != null);
 
             SelectVideoFileCommand = new RelayCommand(async _ => await SelectVideoFileAsync(),
-                _ => SelectedVideoSource == VideoSourceType.FileVideo);
+                _ => SelectedVideoSource == VideoSourceType.FileVideo && !_isSelectingFile); // Добавлена проверка
 
             OpenTrainingDialogCommand = new RelayCommand(_ => OpenTrainingDialog());
             ResetCountersCommand = new RelayCommand(_ => ResetCounters());
@@ -197,8 +199,12 @@ namespace CardboardQualityControl.ViewModels
 
         private async Task SelectVideoFileAsync()
         {
+            if (_isSelectingFile) return; // Защита от повторного входа
+
             try
             {
+                _isSelectingFile = true;
+
                 if (IsMonitoring)
                 {
                     await StopMonitoringAsync();
@@ -230,6 +236,10 @@ namespace CardboardQualityControl.ViewModels
             {
                 _logger.LogError(ex, "Failed to select video file");
                 StatusMessage = "Error selecting video file";
+            }
+            finally
+            {
+                _isSelectingFile = false;
             }
         }
 
@@ -289,7 +299,6 @@ namespace CardboardQualityControl.ViewModels
                 {
                     // Convert Mat to BitmapSource for display
                     BitmapSource bitmapSource;
-                    //var bitmapSource = OpenCvSharp.WpfExtensions.BitmapSourceConverter.ToBitmapSource(frame);
                     try
                     {
                         // Пробуем основной метод
@@ -356,6 +365,8 @@ namespace CardboardQualityControl.ViewModels
 
         private async Task StartMonitoringAsync()
         {
+            if (_isSelectingFile) return; // Защита от повторного входа
+
             try
             {
                 StatusMessage = $"Connecting to {SelectedVideoSource}...";

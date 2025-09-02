@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32; // Добавьте этот using
+﻿using Microsoft.Win32;
 using OpenCvSharp;
 using Microsoft.Extensions.Logging;
 using CardboardQualityControl.Models;
@@ -14,6 +14,8 @@ namespace CardboardQualityControl.Services
         private bool _isCapturing;
         private CancellationTokenSource? _cancellationTokenSource;
         private string _currentVideoPath;
+        private bool _isDialogOpen;
+        private readonly object _captureLock = new object(); // Блокировка для потокобезопасности
 
         public event Action<Mat>? FrameReady;
         public bool IsConnected => _capture?.IsOpened() == true;
@@ -29,6 +31,7 @@ namespace CardboardQualityControl.Services
             _logger = logger;
             _settings = settings;
             _currentVideoPath = settings.Path;
+            _isDialogOpen = false;
         }
 
         public async Task<bool> ConnectAsync()
@@ -40,10 +43,9 @@ namespace CardboardQualityControl.Services
         {
             try
             {
-                // Если путь не указан, открываем диалог выбора файла
                 if (string.IsNullOrEmpty(filePath))
                 {
-                    filePath = ShowOpenFileDialog(); // Измените название метода
+                    filePath = ShowOpenFileDialog();
                     if (string.IsNullOrEmpty(filePath))
                     {
                         _logger.LogWarning("No video file selected");
@@ -59,11 +61,16 @@ namespace CardboardQualityControl.Services
                     return false;
                 }
 
-                _capture = new VideoCapture(filePath);
-                if (!_capture.IsOpened())
+                lock (_captureLock)
                 {
-                    _logger.LogError("Failed to open video file: {FilePath}", filePath);
-                    return false;
+                    _capture = new VideoCapture(filePath);
+                    if (!_capture.IsOpened())
+                    {
+                        _logger.LogError("Failed to open video file: {FilePath}", filePath);
+                        _capture.Dispose();
+                        _capture = null;
+                        return false;
+                    }
                 }
 
                 CurrentVideoPath = filePath;
@@ -77,42 +84,58 @@ namespace CardboardQualityControl.Services
             }
         }
 
-        private string? ShowOpenFileDialog() // Измените название метода
+        private string? ShowOpenFileDialog()
         {
-            var openFileDialog = new OpenFileDialog
-            {
-                Filter = "Video Files|*.mp4;*.avi;*.mov;*.wmv;*.mkv;*.flv;*.webm|All Files|*.*",
-                Title = "Select Video File",
-                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
-                Multiselect = false
-            };
+            if (_isDialogOpen) return null;
 
-            if (openFileDialog.ShowDialog() == true)
+            _isDialogOpen = true;
+            try
             {
-                return openFileDialog.FileName;
+                var openFileDialog = new OpenFileDialog
+                {
+                    Filter = "Video Files|*.mp4;*.avi;*.mov;*.wmv;*.mkv;*.flv;*.webm|All Files|*.*",
+                    Title = "Select Video File",
+                    InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+                    Multiselect = false
+                };
+
+                return openFileDialog.ShowDialog() == true ? openFileDialog.FileName : null;
             }
-
-            return null;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in file dialog");
+                return null;
+            }
+            finally
+            {
+                _isDialogOpen = false;
+            }
         }
 
         public async Task DisconnectAsync()
         {
             await StopCaptureAsync();
-            _capture?.Release();
-            _capture?.Dispose();
-            _capture = null;
+            lock (_captureLock)
+            {
+                _capture?.Release();
+                _capture?.Dispose();
+                _capture = null;
+            }
             _logger.LogInformation("Video file closed");
         }
 
         public async Task StartCaptureAsync()
         {
-            if (_capture == null || !_capture.IsOpened())
+            lock (_captureLock)
             {
-                _logger.LogWarning("Video file is not open");
-                return;
-            }
+                if (_capture == null || !_capture.IsOpened())
+                {
+                    _logger.LogWarning("Video file is not open");
+                    return;
+                }
 
-            if (_isCapturing) return;
+                if (_isCapturing) return;
+            }
 
             try
             {
@@ -136,6 +159,8 @@ namespace CardboardQualityControl.Services
             try
             {
                 _cancellationTokenSource?.Cancel();
+                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = null;
                 _isCapturing = false;
 
                 _logger.LogInformation("Stopped playing video file");
@@ -148,27 +173,58 @@ namespace CardboardQualityControl.Services
 
         private async Task CaptureFrames(CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested && _capture != null && _capture.IsOpened())
+            while (!cancellationToken.IsCancellationRequested)
             {
                 try
                 {
+                    VideoCapture? localCapture;
+                    lock (_captureLock)
+                    {
+                        localCapture = _capture;
+                    }
+
+                    if (localCapture == null || !localCapture.IsOpened())
+                    {
+                        await Task.Delay(100, cancellationToken);
+                        continue;
+                    }
+
                     using (var frame = new Mat())
                     {
-                        if (_capture.Read(frame) && !frame.Empty())
+                        bool readSuccess;
+                        lock (_captureLock)
+                        {
+                            readSuccess = localCapture.Read(frame) && !frame.Empty();
+                        }
+
+                        if (readSuccess)
                         {
                             FrameReady?.Invoke(frame.Clone());
                         }
                         else
                         {
-                            // End of video, restart from beginning if loop is enabled
-                            _capture.Set(VideoCaptureProperties.PosFrames, 0);
+                            // End of video, restart from beginning
+                            lock (_captureLock)
+                            {
+                                localCapture.Set(VideoCaptureProperties.PosFrames, 0);
+                            }
                         }
                     }
 
                     // Adjust delay based on video FPS
-                    var fps = _capture.Fps;
+                    double fps;
+                    lock (_captureLock)
+                    {
+                        fps = localCapture.Fps;
+                    }
+
                     var delay = fps > 0 ? (int)(1000 / fps) : 33;
                     await Task.Delay(delay, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Нормальное завершение при отмене
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -180,9 +236,27 @@ namespace CardboardQualityControl.Services
 
         public void Dispose()
         {
-            DisconnectAsync().Wait();
-            _capture?.Dispose();
-            _cancellationTokenSource?.Dispose();
+            try
+            {
+                // Асинхронный Dispose с таймаутом
+                var disconnectTask = DisconnectAsync();
+                if (!disconnectTask.Wait(TimeSpan.FromSeconds(5)))
+                {
+                    _logger.LogWarning("Disconnect timed out");
+                }
+
+                lock (_captureLock)
+                {
+                    _capture?.Dispose();
+                    _capture = null;
+                }
+
+                _cancellationTokenSource?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during disposal");
+            }
         }
     }
 }
