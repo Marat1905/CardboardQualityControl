@@ -7,19 +7,26 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
 
   <ItemGroup>
     <!-- Microsoft ML Packages -->
-    <PackageReference Include="LijsDev.Basler.Pylon.NET.x64" Version="7.1.0.25066" />
+    <!-- УДАЛИТЬ текущую версию -->
+    <!-- <PackageReference Include="LijsDev.Basler.Pylon.NET.x64" Version="7.1.0.25066" /> -->
+
+    <PackageReference Include="LijsDev.Basler.Pylon.NET" Version="7.5.0.15658" />
+
     <PackageReference Include="Microsoft.ML" Version="3.0.1" />
     <PackageReference Include="Microsoft.ML.Vision" Version="3.0.1" />
     <PackageReference Include="Microsoft.ML.ImageAnalytics" Version="3.0.1" />
 
     <!-- Computer Vision -->
     <PackageReference Include="OpenCvSharp4" Version="4.10.0.20241108" />
+    <PackageReference Include="OpenCvSharp4.Extensions" Version="4.10.0.20241108" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20241108" />
+    <PackageReference Include="OpenCvSharp4.WpfExtensions" Version="4.10.0.20241108" />
 
     <!-- JSON Serialization -->
     <PackageReference Include="System.Text.Json" Version="9.0.0" />

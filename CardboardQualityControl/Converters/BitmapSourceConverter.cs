@@ -14,67 +14,128 @@ namespace CardboardQualityControl.Converters
             if (mat.Empty())
                 return null;
 
-            PixelFormat format;
-            var matType = mat.Type();
-
-            // Используем if-else вместо switch, так как MatType не является enum
-            if (matType == MatType.CV_8UC1)
-            {
-                format = PixelFormats.Gray8;
-            }
-            else if (matType == MatType.CV_8UC3)
-            {
-                format = PixelFormats.Bgr24;
-            }
-            else if (matType == MatType.CV_8UC4)
-            {
-                format = PixelFormats.Bgra32;
-            }
-            else
-            {
-                throw new NotSupportedException($"Unsupported Mat type: {matType}");
-            }
-
-            var width = mat.Width;
-            var height = mat.Height;
-            var step = (int)mat.Step();
-            var data = mat.Data;
-
-            var bitmap = new WriteableBitmap(width, height, 96, 96, format, null);
-            bitmap.Lock();
-
             try
             {
-                var buffer = bitmap.BackBuffer;
-                var bufferSize = height * step;
+                PixelFormat format;
+                var matType = mat.Type();
 
-                if (step == width * format.BitsPerPixel / 8)
+                // Используем if-else вместо switch, так как MatType не является enum
+                if (matType == MatType.CV_8UC1)
                 {
-                    // Если данные непрерывны, копируем всё сразу
-                    CopyMemory(buffer, data, (uint)bufferSize);
+                    format = PixelFormats.Gray8;
+                }
+                else if (matType == MatType.CV_8UC3)
+                {
+                    format = PixelFormats.Bgr24;
+                }
+                else if (matType == MatType.CV_8UC4)
+                {
+                    format = PixelFormats.Bgra32;
                 }
                 else
                 {
-                    // Иначе копируем построчно
-                    for (int y = 0; y < height; y++)
-                    {
-                        var src = new IntPtr(data.ToInt64() + y * step);
-                        var dst = new IntPtr(buffer.ToInt64() + y * bitmap.BackBufferStride);
-                        CopyMemory(dst, src, (uint)(width * format.BitsPerPixel / 8));
-                    }
+                    throw new NotSupportedException($"Unsupported Mat type: {matType}");
                 }
 
-                bitmap.AddDirtyRect(new System.Windows.Int32Rect(0, 0, width, height));
-            }
-            finally
-            {
-                bitmap.Unlock();
-            }
+                int width = mat.Width;
+                int height = mat.Height;
+                int step = (int)mat.Step();
+                IntPtr data = mat.Data;
 
-            return bitmap;
+                // Создаем WriteableBitmap
+                var bitmap = new WriteableBitmap(width, height, 96, 96, format, null);
+
+                bitmap.Lock();
+
+                try
+                {
+                    IntPtr buffer = bitmap.BackBuffer;
+                    int bufferSize = height * step;
+
+                    if (step == width * format.BitsPerPixel / 8)
+                    {
+                        // Копируем данные целиком
+                        NativeMethods.memcpy(buffer, data, (uint)bufferSize);
+                    }
+                    else
+                    {
+                        // Копируем построчно
+                        for (int y = 0; y < height; y++)
+                        {
+                            IntPtr src = new IntPtr(data.ToInt64() + y * step);
+                            IntPtr dst = new IntPtr(buffer.ToInt64() + y * bitmap.BackBufferStride);
+                            NativeMethods.memcpy(dst, src, (uint)(width * format.BitsPerPixel / 8));
+                        }
+                    }
+
+                    bitmap.AddDirtyRect(new System.Windows.Int32Rect(0, 0, width, height));
+                }
+                finally
+                {
+                    bitmap.Unlock();
+                }
+
+                return bitmap;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Failed to convert Mat to BitmapSource", ex);
+            }
         }
 
-        [DllImport("kernel32.dll", EntryPoint = "CopyMemory", SetLastError = false)]
-        private static extern void CopyMemory(IntPtr dest, IntPtr src, uint count);
+        // Альтернативный метод через MemoryStream
+        public static BitmapSource ToBitmapSourceAlternative(Mat mat)
+        {
+            if (mat == null || mat.Empty())
+                return null;
+
+            try
+            {
+                // Конвертируем Mat в массив байтов
+                byte[] imageBytes = mat.ToBytes(".jpg");
+
+                using (var memory = new System.IO.MemoryStream(imageBytes))
+                {
+                    var bitmapImage = new BitmapImage();
+                    bitmapImage.BeginInit();
+                    bitmapImage.StreamSource = memory;
+                    bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmapImage.EndInit();
+                    bitmapImage.Freeze();
+
+                    return bitmapImage;
+                }
+            }
+            catch
+            {
+                // Fallback: используем BMP если JPEG не сработал
+                try
+                {
+                    byte[] imageBytes = mat.ToBytes(".bmp");
+
+                    using (var memory = new System.IO.MemoryStream(imageBytes))
+                    {
+                        var bitmapImage = new BitmapImage();
+                        bitmapImage.BeginInit();
+                        bitmapImage.StreamSource = memory;
+                        bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmapImage.EndInit();
+                        bitmapImage.Freeze();
+
+                        return bitmapImage;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException("Failed to convert Mat to BitmapSource", ex);
+                }
+            }
+        }
+    }
+
+    internal static class NativeMethods
+    {
+        [DllImport("msvcrt.dll", EntryPoint = "memcpy", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr memcpy(IntPtr dest, IntPtr src, uint count);
     }
 }

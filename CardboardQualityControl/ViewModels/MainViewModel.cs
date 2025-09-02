@@ -288,7 +288,19 @@ namespace CardboardQualityControl.ViewModels
                 using (frame)
                 {
                     // Convert Mat to BitmapSource for display
-                    var bitmapSource = BitmapSourceConverter.ToBitmapSource(frame);
+                    BitmapSource bitmapSource;
+                    //var bitmapSource = OpenCvSharp.WpfExtensions.BitmapSourceConverter.ToBitmapSource(frame);
+                    try
+                    {
+                        // Пробуем основной метод
+                        bitmapSource = Converters.BitmapSourceConverter.ToBitmapSourceAlternative(frame);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Primary conversion failed, using alternative method");
+                        // Используем альтернативный метод
+                        bitmapSource = Converters.BitmapSourceConverter.ToBitmapSourceAlternative(frame);
+                    }
 
                     await _dispatcher.InvokeAsync(() =>
                     {

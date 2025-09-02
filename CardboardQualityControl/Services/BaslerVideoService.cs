@@ -1,7 +1,8 @@
 ﻿using Basler.Pylon;
-using OpenCvSharp;
-using Microsoft.Extensions.Logging;
 using CardboardQualityControl.Models;
+using Microsoft.Extensions.Logging;
+using OpenCvSharp;
+using System.Text;
 
 namespace CardboardQualityControl.Services
 {
@@ -25,24 +26,37 @@ namespace CardboardQualityControl.Services
         {
             try
             {
-                _logger.LogInformation("Connecting to Basler camera...");
+                _logger.LogInformation("Searching for Basler cameras...");
 
-                // Find and create camera
-                var cameraInfo = CameraFinder.Enumerate().FirstOrDefault();
-                if (cameraInfo == null)
+                // Проверка доступности камер
+                var cameras = CameraFinder.Enumerate().ToList();
+                if (cameras.Count == 0)
                 {
-                    _logger.LogError("No Basler camera found");
+                    _logger.LogWarning("No Basler cameras found");
                     return false;
                 }
 
+                _logger.LogInformation($"Found {cameras.Count} camera(s)");
+
+                // Выбор камеры
+                var cameraInfo = cameras.First();
                 _camera = new Camera(cameraInfo);
+
+                // ОТЛАДКА: Вывод информации о камере
+                _logger.LogInformation($"Camera Model: {cameraInfo[CameraInfoKey.ModelName]}");
+                _logger.LogInformation($"Camera Serial: {cameraInfo[CameraInfoKey.SerialNumber]}");
+                _logger.LogInformation($"Camera Vendor: {cameraInfo[CameraInfoKey.VendorName]}");
+
+                // Открываем камеру
                 _camera.Open();
 
-                // Configure camera settings
-                _camera.Parameters[PLCamera.ExposureTime].SetValue(_settings.ExposureTime);
-                _camera.Parameters[PLCamera.Gain].SetValue(_settings.Gain);
+                // ОТЛАДКА: Проверка состояния камеры
+                _logger.LogInformation($"Camera connected: {_camera.IsConnected}");
+                _logger.LogInformation($"Camera opened: {_camera.IsOpen}");
 
-                _logger.LogInformation("Basler camera connected successfully");
+                // Настройка параметров камеры
+                ConfigureCameraSettings();
+
                 return true;
             }
             catch (Exception ex)
@@ -52,13 +66,69 @@ namespace CardboardQualityControl.Services
             }
         }
 
+        private void ConfigureCameraSettings()
+        {
+            if (_camera == null) return;
+
+            try
+            {
+                // Сбрасываем настройки к default
+                _camera.Parameters[PLCamera.UserSetSelector].SetValue(PLCamera.UserSetSelector.Default);
+                _camera.Parameters[PLCamera.UserSetLoad].Execute();
+
+                // Базовые настройки
+                _camera.Parameters[PLCamera.AcquisitionMode].SetValue(PLCamera.AcquisitionMode.Continuous);
+
+                // Автоматические настройки для начала
+                _camera.Parameters[PLCamera.ExposureAuto].SetValue(PLCamera.ExposureAuto.Once);
+                _camera.Parameters[PLCamera.GainAuto].SetValue(PLCamera.GainAuto.Once);
+                _camera.Parameters[PLCamera.BalanceWhiteAuto].SetValue(PLCamera.BalanceWhiteAuto.Once);
+
+                // Формат пикселей
+                _camera.Parameters[PLCamera.PixelFormat].SetValue(PLCamera.PixelFormat.BGR8);
+
+                // Настройка размера изображения (максимальный)
+                _camera.Parameters[PLCamera.Width].SetValue(_camera.Parameters[PLCamera.Width].GetMaximum());
+                _camera.Parameters[PLCamera.Height].SetValue(_camera.Parameters[PLCamera.Height].GetMaximum());
+
+                _logger.LogInformation("Camera configured successfully");
+
+                // ОТЛАДКА: Вывод текущих параметров
+                _logger.LogInformation($"Width: {_camera.Parameters[PLCamera.Width].GetValue()}");
+                _logger.LogInformation($"Height: {_camera.Parameters[PLCamera.Height].GetValue()}");
+                _logger.LogInformation($"PixelFormat: {_camera.Parameters[PLCamera.PixelFormat].GetValue()}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error configuring camera settings");
+            }
+        }
+
+       
+
         public async Task DisconnectAsync()
         {
             await StopCaptureAsync();
-            _camera?.Close();
-            _camera?.Dispose();
-            _camera = null;
-            _logger.LogInformation("Basler camera disconnected");
+
+            try
+            {
+                if (_camera != null)
+                {
+                    if (_camera.StreamGrabber.IsGrabbing)
+                    {
+                        _camera.StreamGrabber.Stop();
+                    }
+
+                    _camera.Close();
+                    _camera.Dispose();
+                    _camera = null;
+                }
+                _logger.LogInformation("Basler camera disconnected");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during camera disconnection");
+            }
         }
 
         public async Task StartCaptureAsync()
@@ -73,14 +143,25 @@ namespace CardboardQualityControl.Services
 
             try
             {
-                _camera.StreamGrabber.Start();
+                // Останавливаем grabber если уже запущен
+                if (_camera.StreamGrabber.IsGrabbing)
+                {
+                    _camera.StreamGrabber.Stop();
+                }
+
+                // Подписываемся на события
+                _camera.StreamGrabber.ImageGrabbed -= OnImageGrabbed;
                 _camera.StreamGrabber.ImageGrabbed += OnImageGrabbed;
+
+                // Запускаем захват
+                _camera.StreamGrabber.Start(GrabStrategy.OneByOne, GrabLoop.ProvidedByStreamGrabber);
                 _isCapturing = true;
-                _logger.LogInformation("Started capturing from Basler camera");
+
+                _logger.LogInformation("Capture started successfully");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to start capturing from Basler camera");
+                _logger.LogError(ex, "Failed to start capture");
             }
         }
 
@@ -93,11 +174,11 @@ namespace CardboardQualityControl.Services
                 _camera.StreamGrabber.ImageGrabbed -= OnImageGrabbed;
                 _camera.StreamGrabber.Stop();
                 _isCapturing = false;
-                _logger.LogInformation("Stopped capturing from Basler camera");
+                _logger.LogInformation("Stopped video capture");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to stop capturing from Basler camera");
+                _logger.LogError(ex, "Failed to stop video capture");
             }
         }
 
@@ -133,10 +214,31 @@ namespace CardboardQualityControl.Services
             }
         }
 
+
         public void Dispose()
         {
-            DisconnectAsync().Wait();
-            _camera?.Dispose();
+            try
+            {
+                DisconnectAsync().Wait();
+                _camera?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during camera disposal");
+            }
+        }
+
+        public static string GetPylonVersionInfo()
+        {
+            try
+            {
+                var assembly = typeof(Camera).Assembly;
+                return $"Basler Pylon .NET SDK Version: {assembly.GetName().Version}";
+            }
+            catch
+            {
+                return "Unable to determine Pylon version";
+            }
         }
 
         public Task<bool> ConnectAsync(string? filePath = null)

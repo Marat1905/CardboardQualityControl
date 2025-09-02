@@ -62,7 +62,7 @@
         <Border Grid.Row="0" Background="#FF1976D2" Padding="10">
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="📦 " FontSize="20" VerticalAlignment="Center"/>
-                <TextBlock Text="Cardboard Quality Control System" 
+                <TextBlock Text="Система контроля качества картона" 
                          FontSize="18" 
                          FontWeight="Bold" 
                          Foreground="White"
@@ -112,7 +112,7 @@
                                   SelectedItem="{Binding SelectedVideoSource}"
                                   ItemTemplate="{StaticResource VideoSourceTypeTemplate}"/>
 
-                        <Button Content="Switch Source" 
+                        <Button Content="Переключить источник" 
                                 Command="{Binding SwitchVideoSourceCommand}"
                                 CommandParameter="{Binding SelectedVideoSource}"
                                 Margin="0,8,0,0"
@@ -120,7 +120,7 @@
                                 Foreground="White"/>
 
                         <!-- Кнопка выбора файла -->
-                        <Button Content="Select Video File" 
+                        <Button Content="Выберите видеофайл" 
                                 Command="{Binding SelectVideoFileCommand}"
                                 Margin="0,8,0,0"
                                 Background="#FF9C27B0"
@@ -143,20 +143,20 @@
                 <GroupBox Header="Monitoring" Margin="0,10,0,0">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <Button Content="Start" 
+                            <Button Content="Старт" 
                                     Command="{Binding StartMonitoringCommand}"
                                     Background="#FF4CAF50"
                                     Foreground="White"
                                     IsEnabled="{Binding IsMonitoring, Converter={StaticResource BooleanToNotConverter}}"/>
 
-                            <Button Content="Stop" 
+                            <Button Content="Стоп" 
                                     Command="{Binding StopMonitoringCommand}"
                                     Background="#FFF44336"
                                     Foreground="White"
                                     IsEnabled="{Binding IsMonitoring}"/>
                         </StackPanel>
 
-                        <Button Content="Capture Training Image" 
+                        <Button Content="Захватить обучающее изображение" 
                                 Command="{Binding CaptureTrainingImageCommand}"
                                 Margin="0,8,0,0"
                                 Background="#FFFF9800"
@@ -166,7 +166,7 @@
                 </GroupBox>
 
                 <!-- Status Information -->
-                <GroupBox Header="Status" Margin="0,10,0,0">
+                <GroupBox Header="Статус" Margin="0,10,0,0">
                     <StackPanel>
                         <TextBlock Text="{Binding StatusMessage}" 
                                    FontWeight="Bold"
@@ -179,7 +179,7 @@
                                      Visibility="{Binding IsMonitoring, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <TextBlock Text="Monitoring:"/>
+                            <TextBlock Text="Мониторинг:"/>
                             <TextBlock Text="{Binding IsMonitoring}" 
                                        Foreground="{Binding IsMonitoring, Converter={StaticResource BooleanToColorConverter}}"
                                        Margin="8,0,0,0"/>
@@ -188,7 +188,7 @@
                 </GroupBox>
 
                 <!-- Defect Information -->
-                <GroupBox Header="Defect Detection" Margin="0,10,0,0">
+                <GroupBox Header="Обнаружение дефектов" Margin="0,10,0,0">
                     <StackPanel>
                         <Border Background="{Binding HasDefect, Converter={StaticResource DefectToBrushConverter}}"
                                 CornerRadius="4"
@@ -201,28 +201,28 @@
                         </Border>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Type:"/>
+                            <TextBlock Text="Тип:"/>
                             <TextBlock Text="{Binding CurrentDefect.DefectType, Converter={StaticResource DefectTypeConverter}}"
                                        Margin="8,0,0,0"
                                        FontWeight="Bold"/>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <TextBlock Text="Confidence:"/>
+                            <TextBlock Text="Уверенность:"/>
                             <TextBlock Text="{Binding CurrentDefect.Confidence, StringFormat='{}{0:P1}'}"
                                        Margin="8,0,0,0"
                                        FontWeight="Bold"/>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <TextBlock Text="Total Defects:"/>
+                            <TextBlock Text="Всего дефектов:"/>
                             <TextBlock Text="{Binding DefectCount}"
                                        Margin="8,0,0,0"
                                        FontWeight="Bold"/>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <TextBlock Text="Frames Processed:"/>
+                            <TextBlock Text="Обработано кадров:"/>
                             <TextBlock Text="{Binding TotalFramesProcessed}"
                                        Margin="8,0,0,0"
                                        FontWeight="Bold"/>
@@ -231,14 +231,14 @@
                 </GroupBox>
 
                 <!-- Quick Actions -->
-                <GroupBox Header="Quick Actions" Margin="0,10,0,0">
+                <GroupBox Header="Быстрые действия" Margin="0,10,0,0">
                     <StackPanel>
-                        <Button Content="Open Training Dialog" 
+                        <Button Content="Открытый диалоговое окно обучения" 
                                 Command="{Binding OpenTrainingDialogCommand}"
                                 Background="#FF9C27B0"
                                 Foreground="White"/>
 
-                        <Button Content="Reset Counters" 
+                        <Button Content="Сбросить счетчики" 
                                 Command="{Binding ResetCountersCommand}"
                                 Margin="0,8,0,0"
                                 Background="#FF607D8B"
