@@ -237,7 +237,7 @@ namespace CardboardQualityControl.ViewModels
 
             StartMonitoringCommand = new RelayCommand(
                 _ => _ = StartMonitoringAsync(),
-                _ => !IsMonitoring && _videoService.IsConnected
+                _ => !IsMonitoring 
             );
 
             StopMonitoringCommand = new RelayCommand(
